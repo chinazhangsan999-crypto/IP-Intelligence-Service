@@ -6,6 +6,7 @@ import { installGracefulShutdown } from './lifecycle.js';
 import { createReadiness } from './readiness.js';
 import { ApiClientRepository } from './repositories/ApiClientRepository.js';
 import { ManagementRepository } from './repositories/ManagementRepository.js';
+import { AdminAuthRepository } from './repositories/AdminAuthRepository.js';
 import { CloudRangeProvider } from './providers/CloudRangeProvider.js';
 import { Ip2ProxyProvider } from './providers/Ip2ProxyProvider.js';
 import { MmdbProvider } from './providers/MmdbProvider.js';
@@ -14,6 +15,7 @@ import { ApiClientService } from './services/ApiClientService.js';
 import { ClassificationRuleService } from './services/ClassificationRuleService.js';
 import { IntelligenceEnricher } from './services/IntelligenceEnricher.js';
 import { IpLookupService } from './services/IpLookupService.js';
+import { AdminAuthService } from './services/AdminAuthService.js';
 import { ReloadableLookupService } from './services/ReloadableLookupService.js';
 import { DataUpdateScheduler } from './update/DataUpdateScheduler.js';
 import { ClientRateLimiter } from './security/ClientRateLimiter.js';
@@ -77,6 +79,7 @@ async function start() {
   const pool = createPostgresPool(config.database, logger);
   let authenticator = null;
   let managementRepository = null;
+  let adminAuthService = null;
 
   if (pool) {
     try {
@@ -86,6 +89,8 @@ async function start() {
       const clientRepository = new ApiClientRepository(pool);
       const clientService = new ApiClientService(clientRepository, config.clientSecretMasterKey);
       managementRepository = new ManagementRepository(pool);
+      const adminAuthRepository = new AdminAuthRepository(pool);
+      adminAuthService = new AdminAuthService(adminAuthRepository);
       const databaseRules = await managementRepository.listEnabledClassificationRules();
       ruleService.replaceRules([...ruleService.rules, ...databaseRules]);
       authenticator = new RequestAuthenticator({
@@ -211,6 +216,8 @@ async function start() {
     adminAssets,
     publicAssets,
     publicRateLimiter,
+    adminAuthService,
+    adminRateLimiter: new ClientRateLimiter({ maxEntries: 10_000 }),
   });
   try {
     await new Promise((resolve, reject) => {

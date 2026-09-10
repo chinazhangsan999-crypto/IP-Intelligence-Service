@@ -23,7 +23,9 @@ https://<IP服务域名>/admin/
 
 ```env
 METRICS_ENABLED=1
-METRICS_TOKEN=<至少32字符的独立随机令牌>
+后台不再使用监控令牌登录。首次部署后运行 `npm run admin:account -- admin` 创建管理员，命令会生成一次性初始密码。登录后可在“账户安全”中修改账号或密码。
+
+`METRICS_TOKEN` 仅供 Prometheus 抓取 `/metrics` 使用，与后台账户相互独立。
 ```
 
 令牌只保存在当前页面 JavaScript 内存中：

@@ -2,13 +2,15 @@
   'use strict';
 
   const elements = Object.fromEntries([
-    'auth-screen', 'console', 'auth-form', 'metrics-token', 'toggle-token', 'auth-submit',
+    'auth-screen', 'console', 'auth-form', 'login-username', 'login-password', 'auth-submit',
     'auth-error', 'refresh-button', 'logout-button', 'live-status', 'updated-at',
     'dashboard-error', 'dashboard-error-text', 'retry-button', 'kpi-ready', 'kpi-uptime',
     'kpi-requests', 'kpi-lookups', 'kpi-resolved', 'kpi-slow', 'kpi-memory', 'kpi-heap',
     'kpi-postgres', 'kpi-pool', 'source-count', 'sources-body', 'update-enabled',
     'update-running', 'update-status', 'update-time', 'update-runs', 'routes-body',
-    'trend-chart', 'trend-chart-desc', 'trend-empty', 'main-content',
+    'trend-chart', 'trend-chart-desc', 'trend-empty', 'main-content', 'account-form',
+    'account-username', 'current-password', 'new-password', 'confirm-password',
+    'account-error', 'account-success', 'account-submit', 'current-account',
   ].map((id) => [id, document.getElementById(id)]));
 
   const numberFormat = new Intl.NumberFormat('zh-CN');
@@ -16,7 +18,8 @@
     timeZone: 'Asia/Shanghai', month: '2-digit', day: '2-digit',
     hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false,
   });
-  let token = '';
+  let authenticated = false;
+  let csrfToken = '';
   let refreshing = false;
   let timer = null;
   const samples = [];
@@ -66,29 +69,48 @@
     elements['dashboard-error-text'].textContent = '';
   }
 
-  async function fetchSnapshot(candidateToken = token) {
+  async function request(path, options = {}) {
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), 8_000);
     try {
-      const response = await fetch('/admin/api/observability', {
-        headers: { authorization: `Bearer ${candidateToken}` },
+      const response = await fetch(path, {
+        credentials: 'same-origin',
         cache: 'no-store',
         signal: controller.signal,
+        ...options,
       });
       if (response.status === 401) {
-        const error = new Error('监控访问令牌不正确');
+        const payload = await response.json().catch(() => ({}));
+        const error = new Error(payload.message || '登录状态已失效，请重新登录');
         error.code = 'UNAUTHORIZED';
         throw error;
       }
-      if (!response.ok) throw new Error(`状态接口返回 ${response.status}`);
       const payload = await response.json();
-      return payload.data;
+      if (!response.ok) {
+        const error = new Error(payload.message || `请求返回 ${response.status}`);
+        error.code = payload.code;
+        throw error;
+      }
+      return payload;
     } catch (error) {
-      if (error.name === 'AbortError') throw new Error('状态请求超过 8 秒，请检查服务连接');
+      if (error.name === 'AbortError') throw new Error('请求超过 8 秒，请检查服务连接');
       throw error;
     } finally {
       clearTimeout(timeout);
     }
+  }
+
+  async function fetchSnapshot() {
+    return (await request('/admin/api/observability')).data;
+  }
+
+  function applySession(data) {
+    authenticated = true;
+    csrfToken = data.csrf_token || csrfToken;
+    elements['account-username'].value = data.user.username;
+    elements['current-account'].textContent = data.user.username;
+    elements['auth-screen'].hidden = true;
+    elements.console.hidden = false;
   }
 
   function createCell(text, className = '') {
@@ -260,7 +282,7 @@
   }
 
   async function refresh({ initial = false } = {}) {
-    if (!token || refreshing) return;
+    if (!authenticated || refreshing) return;
     refreshing = true;
     elements['refresh-button'].disabled = true;
     if (!initial) setStatus('neutral', '正在刷新');
@@ -270,10 +292,10 @@
       render(snapshot);
     } catch (error) {
       if (error.code === 'UNAUTHORIZED') {
-        logout();
+        showLogin();
         elements['auth-error'].textContent = error.message;
         elements['auth-error'].hidden = false;
-        elements['metrics-token'].focus();
+        elements['login-username'].focus();
       } else {
         setStatus('bad', '连接异常');
         showError(error.message || '无法加载运行状态，请稍后重试');
@@ -291,35 +313,51 @@
     }, 15_000);
   }
 
-  function logout() {
-    token = '';
+  function showLogin() {
+    authenticated = false;
+    csrfToken = '';
     samples.splice(0);
     clearInterval(timer);
     timer = null;
     elements.console.hidden = true;
     elements['auth-screen'].hidden = false;
-    elements['metrics-token'].value = '';
+    elements['login-password'].value = '';
     elements['auth-submit'].disabled = false;
+  }
+
+  async function logout() {
+    try {
+      if (authenticated && csrfToken) {
+        await request('/admin/api/logout', { method: 'POST', headers: { 'x-csrf-token': csrfToken } });
+      }
+    } catch (_) {
+      // 本地仍退出，服务端会话最多在 12 小时后过期。
+    }
+    showLogin();
   }
 
   elements['auth-form'].addEventListener('submit', async (event) => {
     event.preventDefault();
-    const candidate = elements['metrics-token'].value;
+    const username = elements['login-username'].value.trim();
+    const password = elements['login-password'].value;
     elements['auth-error'].hidden = true;
-    if (candidate.length < 32) {
-      elements['auth-error'].textContent = '请输入至少 32 个字符的监控访问令牌';
+    if (!username || !password) {
+      elements['auth-error'].textContent = '请输入管理账号和密码';
       elements['auth-error'].hidden = false;
-      elements['metrics-token'].focus();
+      (username ? elements['login-password'] : elements['login-username']).focus();
       return;
     }
     elements['auth-submit'].disabled = true;
     elements['auth-submit'].textContent = '正在验证...';
     try {
-      const snapshot = await fetchSnapshot(candidate);
-      token = candidate;
-      elements['metrics-token'].value = '';
-      elements['auth-screen'].hidden = true;
-      elements.console.hidden = false;
+      const login = await request('/admin/api/login', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ username, password }),
+      });
+      applySession(login.data);
+      elements['login-password'].value = '';
+      const snapshot = await fetchSnapshot();
       render(snapshot);
       startPolling();
       window.scrollTo({ top: 0, left: 0 });
@@ -327,23 +365,85 @@
     } catch (error) {
       elements['auth-error'].textContent = error.message || '验证失败，请稍后重试';
       elements['auth-error'].hidden = false;
-      elements['metrics-token'].focus();
+      elements['login-password'].focus();
     } finally {
       elements['auth-submit'].disabled = false;
       elements['auth-submit'].textContent = '验证并进入';
     }
   });
 
-  elements['toggle-token'].addEventListener('click', () => {
-    const reveal = elements['metrics-token'].type === 'password';
-    elements['metrics-token'].type = reveal ? 'text' : 'password';
-    elements['toggle-token'].setAttribute('aria-pressed', String(reveal));
-    elements['toggle-token'].setAttribute('aria-label', reveal ? '隐藏令牌' : '显示令牌');
+  document.querySelectorAll('[data-password-toggle]').forEach((button) => {
+    button.addEventListener('click', () => {
+      const input = document.getElementById(button.dataset.passwordToggle);
+      const reveal = input.type === 'password';
+      input.type = reveal ? 'text' : 'password';
+      button.setAttribute('aria-pressed', String(reveal));
+      button.setAttribute('aria-label', reveal ? '隐藏密码' : '显示密码');
+    });
+  });
+
+  elements['account-form'].addEventListener('submit', async (event) => {
+    event.preventDefault();
+    const username = elements['account-username'].value.trim();
+    const currentPassword = elements['current-password'].value;
+    const newPassword = elements['new-password'].value;
+    const confirmPassword = elements['confirm-password'].value;
+    elements['account-error'].hidden = true;
+    elements['account-success'].hidden = true;
+    if (!currentPassword) {
+      elements['account-error'].textContent = '请输入当前密码确认身份';
+      elements['account-error'].hidden = false;
+      elements['current-password'].focus();
+      return;
+    }
+    if (newPassword && newPassword.length < 12) {
+      elements['account-error'].textContent = '新密码至少需要 12 个字符';
+      elements['account-error'].hidden = false;
+      elements['new-password'].focus();
+      return;
+    }
+    if (newPassword !== confirmPassword) {
+      elements['account-error'].textContent = '两次输入的新密码不一致';
+      elements['account-error'].hidden = false;
+      elements['confirm-password'].focus();
+      return;
+    }
+    elements['account-submit'].disabled = true;
+    elements['account-submit'].textContent = '正在保存...';
+    try {
+      await request('/admin/api/account', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json', 'x-csrf-token': csrfToken },
+        body: JSON.stringify({ current_password: currentPassword, username, new_password: newPassword }),
+      });
+      elements['account-success'].textContent = '账户设置已保存，请使用新账号和密码重新登录。';
+      elements['account-success'].hidden = false;
+      setTimeout(() => {
+        showLogin();
+        elements['login-username'].value = username;
+        elements['login-password'].focus();
+      }, 1200);
+    } catch (error) {
+      elements['account-error'].textContent = error.message || '保存失败，请稍后重试';
+      elements['account-error'].hidden = false;
+    } finally {
+      elements['account-submit'].disabled = false;
+      elements['account-submit'].textContent = '保存账户设置';
+    }
   });
   elements['refresh-button'].addEventListener('click', () => refresh());
   elements['retry-button'].addEventListener('click', () => refresh());
   elements['logout-button'].addEventListener('click', logout);
   document.addEventListener('visibilitychange', () => {
-    if (!document.hidden && token) refresh();
+    if (!document.hidden && authenticated) refresh();
+  });
+
+  request('/admin/api/session').then(async (response) => {
+    applySession(response.data);
+    render(await fetchSnapshot());
+    startPolling();
+  }).catch(() => {
+    showLogin();
+    elements['login-username'].focus();
   });
 })();

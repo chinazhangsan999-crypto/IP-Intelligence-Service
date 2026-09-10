@@ -41,6 +41,10 @@ function routeKind(method, pathname) {
   if (method === 'GET' && (pathname === '/admin' || pathname === '/admin/')) return 'admin-index';
   if (method === 'GET' && pathname === '/admin/app.css') return 'admin-style';
   if (method === 'GET' && pathname === '/admin/app.js') return 'admin-script';
+  if (method === 'POST' && pathname === '/admin/api/login') return 'admin-login';
+  if (method === 'GET' && pathname === '/admin/api/session') return 'admin-session';
+  if (method === 'POST' && pathname === '/admin/api/logout') return 'admin-logout';
+  if (method === 'POST' && pathname === '/admin/api/account') return 'admin-account';
   if (method === 'GET' && pathname === '/admin/api/observability') return 'admin-observability';
   if (method === 'GET' && pathname === '/health') return 'health';
   if (method === 'GET' && pathname === '/metrics') return 'metrics';
@@ -61,6 +65,10 @@ function allowedMethods(pathname) {
     '/admin/': ['GET'],
     '/admin/app.css': ['GET'],
     '/admin/app.js': ['GET'],
+    '/admin/api/login': ['POST'],
+    '/admin/api/session': ['GET'],
+    '/admin/api/logout': ['POST'],
+    '/admin/api/account': ['POST'],
     '/admin/api/observability': ['GET'],
     '/health': ['GET'],
     '/metrics': ['GET'],
@@ -170,6 +178,47 @@ function parseLookupRequest(rawBody) {
   return payload.ips;
 }
 
+function parseJsonObject(rawBody) {
+  let payload;
+  try {
+    payload = JSON.parse(rawBody.toString('utf8'));
+  } catch {
+    throw new HttpError(400, 'INVALID_JSON', 'Request body must be valid JSON');
+  }
+  if (!payload || typeof payload !== 'object' || Array.isArray(payload)) {
+    throw new HttpError(400, 'INVALID_REQUEST', 'Request body must be an object');
+  }
+  return payload;
+}
+
+function parseCookies(header) {
+  if (typeof header !== 'string') return {};
+  return Object.fromEntries(header.split(';').map((part) => {
+    const separator = part.indexOf('=');
+    if (separator < 1) return null;
+    const name = part.slice(0, separator).trim();
+    const value = part.slice(separator + 1).trim();
+    return [name, value];
+  }).filter(Boolean));
+}
+
+function adminSessionCookie(value, maxAgeSeconds = 43_200) {
+  return `ip_admin_session=${value}; Path=/admin; HttpOnly; Secure; SameSite=Strict; Max-Age=${maxAgeSeconds}`;
+}
+
+function requireSameOrigin(req) {
+  const origin = req.headers.origin;
+  if (!origin) return;
+  try {
+    if (new URL(origin).host !== req.headers.host) {
+      throw new HttpError(403, 'ORIGIN_REJECTED', 'Request origin is not allowed');
+    }
+  } catch (error) {
+    if (error instanceof HttpError) throw error;
+    throw new HttpError(403, 'ORIGIN_REJECTED', 'Request origin is not allowed');
+  }
+}
+
 export function createHttpServer({
   config,
   logger,
@@ -183,6 +232,8 @@ export function createHttpServer({
   adminAssets = null,
   publicAssets = null,
   publicRateLimiter = null,
+  adminAuthService = null,
+  adminRateLimiter = null,
 }) {
   const server = http.createServer((req, res) => {
     const startedAt = process.hrtime.bigint();
@@ -234,7 +285,7 @@ export function createHttpServer({
         return;
       }
 
-      if (kind.startsWith('admin-') && kind !== 'admin-observability') {
+      if (['admin-index', 'admin-style', 'admin-script'].includes(kind)) {
         const assetName = {
           'admin-index': 'index',
           'admin-style': 'style',
@@ -288,17 +339,88 @@ export function createHttpServer({
         return;
       }
 
-      if (kind === 'admin-observability') {
-        if (!config.observability?.metricsEnabled) {
-          sendError(res, requestId, 404, 'NOT_FOUND', 'Route not found');
+      if (kind.startsWith('admin-')) {
+        if (!adminAuthService) throw new HttpError(503, 'SERVICE_NOT_READY', 'Admin authentication is not configured');
+
+        if (kind === 'admin-login') {
+          requireSameOrigin(req);
+          if (!isJsonContentType(req.headers['content-type'])) {
+            req.resume();
+            throw new HttpError(415, 'UNSUPPORTED_MEDIA_TYPE', 'Content-Type must be application/json');
+          }
+          const clientAddress = getPublicClientAddress(req, config.publicLookup?.trustProxy === true);
+          const rate = adminRateLimiter?.consume(`login:${clientAddress || 'unknown'}`, 10);
+          if (rate && !rate.allowed) {
+            throw new HttpError(429, 'RATE_LIMITED', '登录尝试过于频繁，请稍后再试', {
+              headers: { 'retry-after': String(rate.retryAfterSeconds) },
+            });
+          }
+          const payload = parseJsonObject(await readRawBody(req, config.security.maxBodyBytes));
+          const result = await adminAuthService.login(payload.username, payload.password);
+          sendJson(res, 200, {
+            request_id: requestId,
+            code: 'OK',
+            data: { user: result.user, csrf_token: result.csrfToken, expires_at: result.expiresAt },
+          }, { 'set-cookie': adminSessionCookie(result.sessionToken) });
           return;
         }
-        if (!hasValidBearerToken(req.headers.authorization, config.observability.metricsToken)) {
-          sendError(res, requestId, 401, 'UNAUTHORIZED', 'Valid monitoring bearer token required', null, {
-            'www-authenticate': 'Bearer',
+
+        const sessionToken = parseCookies(req.headers.cookie).ip_admin_session;
+        const session = await adminAuthService.authenticate(sessionToken);
+        if (!session) {
+          sendError(res, requestId, 401, 'UNAUTHORIZED', '请先登录管理后台');
+          return;
+        }
+
+        if (kind === 'admin-session') {
+          const csrfToken = await adminAuthService.refreshCsrf(session);
+          sendJson(res, 200, {
+            request_id: requestId,
+            code: 'OK',
+            data: {
+              user: { id: session.admin_user_id, username: session.username },
+              csrf_token: csrfToken,
+              expires_at: session.expires_at,
+            },
           });
           return;
         }
+
+        if (kind === 'admin-logout' || kind === 'admin-account') {
+          requireSameOrigin(req);
+          if (!adminAuthService.verifyCsrf(session, req.headers['x-csrf-token'])) {
+            throw new HttpError(403, 'CSRF_REJECTED', '安全校验失败，请重新登录');
+          }
+        }
+
+        if (kind === 'admin-logout') {
+          await adminAuthService.logout(session);
+          sendJson(res, 200, { request_id: requestId, code: 'OK' }, {
+            'set-cookie': adminSessionCookie('', 0),
+          });
+          return;
+        }
+
+        if (kind === 'admin-account') {
+          if (!isJsonContentType(req.headers['content-type'])) {
+            req.resume();
+            throw new HttpError(415, 'UNSUPPORTED_MEDIA_TYPE', 'Content-Type must be application/json');
+          }
+          const payload = parseJsonObject(await readRawBody(req, config.security.maxBodyBytes));
+          await adminAuthService.changeCredentials(session, {
+            currentPassword: payload.current_password,
+            username: payload.username,
+            newPassword: payload.new_password,
+          });
+          sendJson(res, 200, {
+            request_id: requestId,
+            code: 'OK',
+            data: { relogin_required: true },
+          }, { 'set-cookie': adminSessionCookie('', 0) });
+          return;
+        }
+
+      if (kind === 'admin-observability') {
         if (!metrics) throw new HttpError(503, 'SERVICE_NOT_READY', 'Metrics service is not configured');
         sendJson(res, 200, {
           request_id: requestId,
@@ -306,6 +428,7 @@ export function createHttpServer({
           data: metrics.snapshot({ readiness, updateScheduler, pool: databasePool }),
         });
         return;
+      }
       }
 
 

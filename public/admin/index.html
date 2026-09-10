@@ -21,16 +21,16 @@
       <h1 id="auth-title">进入运维中心</h1>
       <p class="auth-copy">查看服务健康度、查询负载、数据源和自动更新状态。</p>
       <form id="auth-form" novalidate>
-        <label class="visually-hidden" for="metrics-username">账户</label>
-        <input class="visually-hidden" id="metrics-username" name="username" type="text" autocomplete="username" value="metrics" tabindex="-1" aria-hidden="true">
-        <label for="metrics-token">监控访问令牌</label>
+        <label for="login-username">管理账号</label>
+        <input class="form-input" id="login-username" name="username" type="text" autocomplete="username" required maxlength="64" spellcheck="false">
+        <label for="login-password">密码</label>
         <div class="password-row">
-          <input id="metrics-token" name="token" type="password" autocomplete="current-password" required minlength="32" spellcheck="false">
-          <button class="icon-button" id="toggle-token" type="button" aria-label="显示令牌" aria-pressed="false">
+          <input id="login-password" name="password" type="password" autocomplete="current-password" required maxlength="128">
+          <button class="icon-button" data-password-toggle="login-password" type="button" aria-label="显示密码" aria-pressed="false">
             <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5c5.2 0 9.3 4.1 10.6 6.1a1.6 1.6 0 0 1 0 1.8C21.3 14.9 17.2 19 12 19S2.7 14.9 1.4 12.9a1.6 1.6 0 0 1 0-1.8C2.7 9.1 6.8 5 12 5Zm0 2c-4 0-7.4 3.1-8.7 5 1.3 1.9 4.7 5 8.7 5s7.4-3.1 8.7-5C19.4 10.1 16 7 12 7Zm0 1.5a3.5 3.5 0 1 1 0 7 3.5 3.5 0 0 1 0-7Zm0 2a1.5 1.5 0 1 0 0 3 1.5 1.5 0 0 0 0-3Z"/></svg>
           </button>
         </div>
-        <p class="field-help">令牌只保存在当前页面内存，刷新或退出后立即清除。</p>
+        <p class="field-help">登录状态使用安全 Cookie 保存 12 小时，不会在浏览器中保存密码。</p>
         <p class="form-error" id="auth-error" role="alert" hidden></p>
         <button class="primary-button" id="auth-submit" type="submit">验证并进入</button>
       </form>
@@ -99,6 +99,34 @@
       <section class="panel routes-panel" aria-labelledby="routes-title">
         <div class="panel-heading"><div><h2 id="routes-title">接口性能</h2><p>本进程启动以来的固定路由聚合，不包含 URL 参数。</p></div></div>
         <div class="table-scroll"><table><thead><tr><th scope="col">方法</th><th scope="col">路由</th><th scope="col">请求数</th><th scope="col">平均耗时</th><th scope="col">P95 上界</th></tr></thead><tbody id="routes-body"></tbody></table></div>
+      </section>
+
+      <section class="panel account-panel" aria-labelledby="account-title">
+        <div class="panel-heading"><div><h2 id="account-title">账户安全</h2><p>修改管理账号或密码。保存后所有已登录设备都会退出。</p></div><span class="count-badge" id="current-account">--</span></div>
+        <form id="account-form" novalidate>
+          <div class="account-grid">
+            <div class="field-group">
+              <label for="account-username">管理账号</label>
+              <input class="form-input" id="account-username" name="username" type="text" autocomplete="username" required maxlength="64" spellcheck="false">
+            </div>
+            <div class="field-group">
+              <label for="current-password">当前密码</label>
+              <div class="password-row"><input id="current-password" name="current_password" type="password" autocomplete="current-password" required maxlength="128"><button class="icon-button" data-password-toggle="current-password" type="button" aria-label="显示密码" aria-pressed="false"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5c5.2 0 9.3 4.1 10.6 6.1a1.6 1.6 0 0 1 0 1.8C21.3 14.9 17.2 19 12 19S2.7 14.9 1.4 12.9a1.6 1.6 0 0 1 0-1.8C2.7 9.1 6.8 5 12 5Zm0 2c-4 0-7.4 3.1-8.7 5 1.3 1.9 4.7 5 8.7 5s7.4-3.1 8.7-5C19.4 10.1 16 7 12 7Zm0 1.5a3.5 3.5 0 1 1 0 7 3.5 3.5 0 0 1 0-7Z"/></svg></button></div>
+            </div>
+            <div class="field-group">
+              <label for="new-password">新密码</label>
+              <div class="password-row"><input id="new-password" name="new_password" type="password" autocomplete="new-password" minlength="12" maxlength="128" aria-describedby="new-password-help"><button class="icon-button" data-password-toggle="new-password" type="button" aria-label="显示密码" aria-pressed="false"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5c5.2 0 9.3 4.1 10.6 6.1a1.6 1.6 0 0 1 0 1.8C21.3 14.9 17.2 19 12 19S2.7 14.9 1.4 12.9a1.6 1.6 0 0 1 0-1.8C2.7 9.1 6.8 5 12 5Zm0 2c-4 0-7.4 3.1-8.7 5 1.3 1.9 4.7 5 8.7 5s7.4-3.1 8.7-5C19.4 10.1 16 7 12 7Zm0 1.5a3.5 3.5 0 1 1 0 7 3.5 3.5 0 0 1 0-7Z"/></svg></button></div>
+              <p class="field-help" id="new-password-help">不修改密码可留空；新密码至少 12 个字符。</p>
+            </div>
+            <div class="field-group">
+              <label for="confirm-password">确认新密码</label>
+              <div class="password-row"><input id="confirm-password" name="confirm_password" type="password" autocomplete="new-password" maxlength="128"><button class="icon-button" data-password-toggle="confirm-password" type="button" aria-label="显示密码" aria-pressed="false"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5c5.2 0 9.3 4.1 10.6 6.1a1.6 1.6 0 0 1 0 1.8C21.3 14.9 17.2 19 12 19S2.7 14.9 1.4 12.9a1.6 1.6 0 0 1 0-1.8C2.7 9.1 6.8 5 12 5Zm0 2c-4 0-7.4 3.1-8.7 5 1.3 1.9 4.7 5 8.7 5s7.4-3.1 8.7-5C19.4 10.1 16 7 12 7Zm0 1.5a3.5 3.5 0 1 1 0 7 3.5 3.5 0 0 1 0-7Z"/></svg></button></div>
+            </div>
+          </div>
+          <p class="form-error" id="account-error" role="alert" hidden></p>
+          <p class="form-success" id="account-success" role="status" hidden></p>
+          <button class="primary-button account-submit" id="account-submit" type="submit">保存账户设置</button>
+        </form>
       </section>
     </main>
   </div>

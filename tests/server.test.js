@@ -113,7 +113,7 @@ test('observability endpoint uses HMAC authentication and returns aggregate runt
   }, allowAuthenticator, null, null, { metrics });
 });
 
-test('admin shell has strict browser headers and its data endpoint uses the monitoring token', async () => {
+test('admin shell uses account sessions while metrics keeps its separate bearer token', async () => {
   const metrics = new MetricsRegistry();
   const readiness = createReadiness([{ id: 'dbip-city', required: true, ready: true }]);
   const adminAssets = {
@@ -121,7 +121,29 @@ test('admin shell has strict browser headers and its data endpoint uses the moni
     style: { body: Buffer.from('body{}'), contentType: 'text/css; charset=utf-8' },
     script: { body: Buffer.from(''), contentType: 'text/javascript; charset=utf-8' },
   };
-  const monitoringToken = 'a'.repeat(32);
+  let active = true;
+  const adminAuthService = {
+    async login(username, password) {
+      if (username !== 'admin' || password !== 'correct-password') {
+        const error = new Error('账号或密码错误');
+        error.statusCode = 401;
+        throw error;
+      }
+      return {
+        sessionToken: 's'.repeat(64), csrfToken: 'csrf-value', expiresAt: new Date(Date.now() + 60_000),
+        user: { id: 1, username: 'admin' },
+      };
+    },
+    async authenticate(token) {
+      return active && token === 's'.repeat(64)
+        ? { tokenHash: 'hash', csrf_token_hash: 'csrf-hash', admin_user_id: 1, username: 'admin' }
+        : null;
+    },
+    async refreshCsrf() { return 'csrf-value'; },
+    verifyCsrf(_session, token) { return token === 'csrf-value'; },
+    async logout() { active = false; },
+    async changeCredentials() { active = false; },
+  };
   await withServer(readiness, async (baseUrl) => {
     const page = await fetch(`${baseUrl}/admin`);
     assert.equal(page.status, 200);
@@ -131,18 +153,38 @@ test('admin shell has strict browser headers and its data endpoint uses the moni
     const denied = await fetch(`${baseUrl}/admin/api/observability`);
     assert.equal(denied.status, 401);
 
+    const login = await fetch(`${baseUrl}/admin/api/login`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ username: 'admin', password: 'correct-password' }),
+    });
+    assert.equal(login.status, 200);
+    const cookie = login.headers.get('set-cookie').split(';', 1)[0];
+    assert.match(login.headers.get('set-cookie'), /HttpOnly; Secure; SameSite=Strict/);
     const allowed = await fetch(`${baseUrl}/admin/api/observability`, {
-      headers: { authorization: `Bearer ${monitoringToken}` },
+      headers: { cookie },
     });
     const body = await allowed.json();
     assert.equal(allowed.status, 200);
     assert.equal(body.code, 'OK');
     assert.equal(body.data.readiness.required_sources_ready, true);
+
+    const session = await fetch(`${baseUrl}/admin/api/session`, { headers: { cookie } });
+    assert.equal(session.status, 200);
+    assert.equal((await session.json()).data.user.username, 'admin');
+
+    const logout = await fetch(`${baseUrl}/admin/api/logout`, {
+      method: 'POST', headers: { cookie, 'x-csrf-token': 'csrf-value' },
+    });
+    assert.equal(logout.status, 200);
+    assert.match(logout.headers.get('set-cookie'), /Max-Age=0/);
   }, allowAuthenticator, null, null, {
     metrics,
     adminAssets,
+    adminAuthService,
+    adminRateLimiter: new ClientRateLimiter(),
     config: {
-      observability: { metricsEnabled: true, metricsToken: monitoringToken, slowRequestMs: 1_000 },
+      observability: { metricsEnabled: true, metricsToken: 'a'.repeat(32), slowRequestMs: 1_000 },
     },
   });
 });
