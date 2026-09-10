@@ -1,0 +1,17 @@
+node_modules/
+.env
+.env.*
+!.env.example
+data/*.mmdb
+data/*.bin
+data/*.txt
+data/*.csv
+data/*.gz
+data/cloud-ranges.json
+data/*.tmp-*
+data/*.backup-*
+data/.*.backup.mmdb
+!data/.gitkeep
+coverage/
+*.log
+deploy/private/

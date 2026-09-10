@@ -1,0 +1,80 @@
+version: "2.4"
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ip_intelligence
+      POSTGRES_USER: ip_service
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ip_service -d ip_intelligence"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+    networks:
+      - backend
+
+  app:
+    build:
+      context: ..
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    environment:
+      NODE_ENV: production
+      HOST: 0.0.0.0
+      PORT: 3101
+      LOG_LEVEL: info
+      IP_DATA_DIR: /app/data
+      IP_CONFIG_DIR: /app/config
+      IP_DATA_AUTO_UPDATE_ENABLED: "1"
+      IP_DATA_UPDATE_INTERVAL_HOURS: "6"
+      IP_DATA_UPDATE_STARTUP_DELAY_SECONDS: "60"
+      DATABASE_URL: postgresql://ip_service:${POSTGRES_PASSWORD}@postgres:5432/ip_intelligence
+      DATABASE_SSL_MODE: disable
+      DATABASE_POOL_MAX: "10"
+      CLIENT_SECRET_MASTER_KEY: ${CLIENT_SECRET_MASTER_KEY}
+      METRICS_ENABLED: "1"
+      METRICS_TOKEN: ${METRICS_TOKEN}
+      PUBLIC_LOOKUP_ENABLED: "1"
+      PUBLIC_LOOKUP_RATE_LIMIT_PER_MINUTE: "30"
+      PUBLIC_TRUST_PROXY: "1"
+    volumes:
+      - ../data:/app/data
+    depends_on:
+      postgres:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:3101/health').then(r=>{if(!r.ok)process.exit(1)}).catch(()=>process.exit(1))"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+    networks:
+      - backend
+
+  caddy:
+    image: caddy:2.10-alpine
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    depends_on:
+      app:
+        condition: service_healthy
+    networks:
+      - backend
+
+networks:
+  backend:
+
+volumes:
+  postgres_data:
+  caddy_data:
+  caddy_config:

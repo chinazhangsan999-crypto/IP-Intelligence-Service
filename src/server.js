@@ -1,0 +1,495 @@
+import http from 'node:http';
+import { timingSafeEqual } from 'node:crypto';
+import { HttpError } from './http/HttpError.js';
+import { sendError, sendJson } from './http/respond.js';
+import { resolveRequestId } from './utils/requestId.js';
+
+function getPathname(req) {
+  try {
+    return new URL(req.url, 'http://localhost').pathname;
+  } catch {
+    return '/';
+  }
+}
+
+async function readRawBody(req, maxBytes) {
+  const contentLength = Number(req.headers['content-length']);
+  if (Number.isFinite(contentLength) && contentLength > maxBytes) {
+    req.resume();
+    throw new HttpError(413, 'PAYLOAD_TOO_LARGE', 'Request body is too large');
+  }
+  const chunks = [];
+  let total = 0;
+
+  for await (const chunk of req) {
+    total += chunk.length;
+    if (total > maxBytes) {
+      req.resume();
+      throw new HttpError(413, 'PAYLOAD_TOO_LARGE', 'Request body is too large');
+    }
+    chunks.push(chunk);
+  }
+
+  return Buffer.concat(chunks);
+}
+
+function routeKind(method, pathname) {
+  if (method === 'GET' && pathname === '/') return 'public-index';
+  if (method === 'GET' && pathname === '/app.css') return 'public-style';
+  if (method === 'GET' && pathname === '/app.js') return 'public-script';
+  if (method === 'GET' && pathname === '/api/public/lookup') return 'public-lookup';
+  if (method === 'GET' && (pathname === '/admin' || pathname === '/admin/')) return 'admin-index';
+  if (method === 'GET' && pathname === '/admin/app.css') return 'admin-style';
+  if (method === 'GET' && pathname === '/admin/app.js') return 'admin-script';
+  if (method === 'GET' && pathname === '/admin/api/observability') return 'admin-observability';
+  if (method === 'GET' && pathname === '/health') return 'health';
+  if (method === 'GET' && pathname === '/metrics') return 'metrics';
+  if (method === 'GET' && pathname === '/ready') return 'ready';
+  if (method === 'GET' && pathname === '/v1/meta/sources') return 'sources';
+  if (method === 'GET' && pathname === '/v1/meta/observability') return 'observability';
+  if (method === 'POST' && pathname === '/v1/ip/lookup') return 'lookup';
+  return null;
+}
+
+function allowedMethods(pathname) {
+  return {
+    '/': ['GET'],
+    '/app.css': ['GET'],
+    '/app.js': ['GET'],
+    '/api/public/lookup': ['GET'],
+    '/admin': ['GET'],
+    '/admin/': ['GET'],
+    '/admin/app.css': ['GET'],
+    '/admin/app.js': ['GET'],
+    '/admin/api/observability': ['GET'],
+    '/health': ['GET'],
+    '/metrics': ['GET'],
+    '/ready': ['GET'],
+    '/v1/meta/sources': ['GET'],
+    '/v1/meta/observability': ['GET'],
+    '/v1/ip/lookup': ['POST'],
+  }[pathname] || null;
+}
+
+function routeLabel(pathname) {
+  if (allowedMethods(pathname)) return pathname;
+  return 'unmatched';
+}
+
+function hasValidBearerToken(header, expectedToken) {
+  if (typeof header !== 'string' || !header.startsWith('Bearer ')) return false;
+  const actual = Buffer.from(header.slice(7), 'utf8');
+  const expected = Buffer.from(expectedToken, 'utf8');
+  return actual.length === expected.length && timingSafeEqual(actual, expected);
+}
+
+function sendPrometheus(res, body) {
+  res.writeHead(200, {
+    'content-type': 'text/plain; version=0.0.4; charset=utf-8',
+    'content-length': Buffer.byteLength(body),
+    'cache-control': 'no-store',
+    'x-content-type-options': 'nosniff',
+  });
+  res.end(body);
+}
+
+function sendAdminAsset(res, asset, isDocument = false) {
+  const headers = {
+    'content-type': asset.contentType,
+    'content-length': asset.body.length,
+    'cache-control': 'no-store',
+    'x-content-type-options': 'nosniff',
+    'referrer-policy': 'no-referrer',
+    'x-frame-options': 'DENY',
+  };
+  if (isDocument) {
+    headers['content-security-policy'] = "default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:; connect-src 'self'; object-src 'none'; base-uri 'none'; frame-ancestors 'none'; form-action 'self'";
+  }
+  res.writeHead(200, headers);
+  res.end(asset.body);
+}
+
+function sendPublicAsset(res, asset, isDocument = false) {
+  const headers = {
+    'content-type': asset.contentType,
+    'content-length': asset.body.length,
+    'cache-control': 'no-cache',
+    'x-content-type-options': 'nosniff',
+    'referrer-policy': 'strict-origin-when-cross-origin',
+    'x-frame-options': 'DENY',
+    'permissions-policy': 'camera=(), microphone=(), geolocation=()',
+  };
+  if (isDocument) {
+    headers['content-security-policy'] = "default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:; connect-src 'self'; object-src 'none'; base-uri 'none'; frame-ancestors 'none'; form-action 'self'";
+  }
+  res.writeHead(200, headers);
+  res.end(asset.body);
+}
+
+function getPublicClientAddress(req, trustProxy) {
+  if (trustProxy) {
+    const forwarded = req.headers['x-forwarded-for'];
+    const value = Array.isArray(forwarded) ? forwarded[0] : forwarded;
+    const first = typeof value === 'string' ? value.split(',', 1)[0].trim() : '';
+    if (first && first.length <= 64) return first;
+  }
+  return req.socket.remoteAddress || '';
+}
+
+function publicLookupSourcesReady(snapshot) {
+  const states = new Map(snapshot.sources.map((source) => [source.id, source]));
+  return states.get('dbip-city')?.ready === true && states.get('dbip-asn')?.ready === true;
+}
+
+function isJsonContentType(value) {
+  return typeof value === 'string'
+    && value.split(';', 1)[0].trim().toLowerCase() === 'application/json';
+}
+
+function parseLookupRequest(rawBody) {
+  let payload;
+  try {
+    payload = JSON.parse(rawBody.toString('utf8'));
+  } catch {
+    throw new HttpError(400, 'INVALID_JSON', 'Request body must be valid JSON');
+  }
+
+  if (!payload || typeof payload !== 'object' || Array.isArray(payload)) {
+    throw new HttpError(400, 'INVALID_REQUEST', 'Request body must be an object');
+  }
+  const keys = Object.keys(payload);
+  if (keys.length !== 1 || keys[0] !== 'ips' || !Array.isArray(payload.ips) || payload.ips.length < 1) {
+    throw new HttpError(400, 'INVALID_REQUEST', 'ips must contain between 1 and 100 items');
+  }
+  if (payload.ips.length > 100) {
+    throw new HttpError(422, 'BATCH_LIMIT_EXCEEDED', 'ips cannot contain more than 100 items');
+  }
+  if (payload.ips.some((ip) => typeof ip !== 'string' || ip.length > 64)) {
+    throw new HttpError(400, 'INVALID_REQUEST', 'Each ips item must be a string no longer than 64 characters');
+  }
+  return payload.ips;
+}
+
+export function createHttpServer({
+  config,
+  logger,
+  readiness,
+  authenticator = null,
+  lookupService = null,
+  usageRepository = null,
+  metrics = null,
+  updateScheduler = null,
+  databasePool = null,
+  adminAssets = null,
+  publicAssets = null,
+  publicRateLimiter = null,
+}) {
+  const server = http.createServer((req, res) => {
+    const startedAt = process.hrtime.bigint();
+    const requestId = resolveRequestId(req.headers['x-request-id']);
+    const pathname = getPathname(req);
+    const metricRoute = routeLabel(pathname);
+
+    res.setHeader('x-request-id', requestId);
+    res.once('finish', () => {
+      const durationMs = Number(process.hrtime.bigint() - startedAt) / 1_000_000;
+      const slow = durationMs >= (config.observability?.slowRequestMs ?? 1_000);
+      metrics?.observeHttp({
+        method: req.method,
+        route: metricRoute,
+        statusCode: res.statusCode,
+        durationMs,
+        slow,
+      });
+      logger.info('request_completed', {
+        request_id: requestId,
+        method: req.method,
+        route: metricRoute,
+        status_code: res.statusCode,
+        duration_ms: Number(durationMs.toFixed(2)),
+      });
+      if (slow) {
+        logger.warn('slow_request', {
+          request_id: requestId,
+          method: req.method,
+          route: metricRoute,
+          status_code: res.statusCode,
+          duration_ms: Number(durationMs.toFixed(2)),
+          threshold_ms: config.observability?.slowRequestMs ?? 1_000,
+        });
+      }
+    });
+
+    async function handle() {
+      const kind = routeKind(req.method, pathname);
+      if (!kind) {
+        const methods = allowedMethods(pathname);
+        if (methods) {
+          sendError(res, requestId, 405, 'METHOD_NOT_ALLOWED', 'Method not allowed', null, {
+            allow: methods.join(', '),
+          });
+          return;
+        }
+        sendError(res, requestId, 404, 'NOT_FOUND', 'Route not found');
+        return;
+      }
+
+      if (kind.startsWith('admin-') && kind !== 'admin-observability') {
+        const assetName = {
+          'admin-index': 'index',
+          'admin-style': 'style',
+          'admin-script': 'script',
+        }[kind];
+        const asset = adminAssets?.[assetName];
+        if (!asset) throw new HttpError(503, 'SERVICE_NOT_READY', 'Admin interface is not available');
+        sendAdminAsset(res, asset, kind === 'admin-index');
+        return;
+      }
+
+      if (kind.startsWith('public-') && kind !== 'public-lookup') {
+        const assetName = {
+          'public-index': 'index',
+          'public-style': 'style',
+          'public-script': 'script',
+        }[kind];
+        const asset = publicAssets?.[assetName];
+        if (!asset) throw new HttpError(503, 'SERVICE_NOT_READY', 'Public interface is not available');
+        sendPublicAsset(res, asset, kind === 'public-index');
+        return;
+      }
+
+      if (kind === 'health') {
+        sendJson(res, 200, {
+          request_id: requestId,
+          ok: true,
+          service: config.serviceName,
+        });
+        return;
+      }
+
+      if (kind === 'metrics') {
+        if (!config.observability?.metricsEnabled) {
+          sendError(res, requestId, 404, 'NOT_FOUND', 'Route not found');
+          return;
+        }
+        if (!hasValidBearerToken(req.headers.authorization, config.observability.metricsToken)) {
+          sendError(res, requestId, 401, 'UNAUTHORIZED', 'Valid metrics bearer token required', null, {
+            'www-authenticate': 'Bearer',
+          });
+          return;
+        }
+        if (!metrics) throw new HttpError(503, 'SERVICE_NOT_READY', 'Metrics service is not configured');
+        sendPrometheus(res, metrics.renderPrometheus({
+          serviceName: config.serviceName,
+          readiness,
+          updateScheduler,
+          pool: databasePool,
+        }));
+        return;
+      }
+
+      if (kind === 'admin-observability') {
+        if (!config.observability?.metricsEnabled) {
+          sendError(res, requestId, 404, 'NOT_FOUND', 'Route not found');
+          return;
+        }
+        if (!hasValidBearerToken(req.headers.authorization, config.observability.metricsToken)) {
+          sendError(res, requestId, 401, 'UNAUTHORIZED', 'Valid monitoring bearer token required', null, {
+            'www-authenticate': 'Bearer',
+          });
+          return;
+        }
+        if (!metrics) throw new HttpError(503, 'SERVICE_NOT_READY', 'Metrics service is not configured');
+        sendJson(res, 200, {
+          request_id: requestId,
+          code: 'OK',
+          data: metrics.snapshot({ readiness, updateScheduler, pool: databasePool }),
+        });
+        return;
+      }
+
+
+      if (kind === 'public-lookup') {
+        if (config.publicLookup?.enabled === false) {
+          sendError(res, requestId, 404, 'NOT_FOUND', 'Route not found');
+          return;
+        }
+        if (!lookupService) {
+          throw new HttpError(503, 'SERVICE_NOT_READY', 'IP lookup service is not configured');
+        }
+        const clientAddress = getPublicClientAddress(req, config.publicLookup?.trustProxy === true);
+        const rate = publicRateLimiter?.consume(clientAddress || 'unknown', config.publicLookup?.rateLimitPerMinute ?? 30);
+        if (rate) {
+          res.setHeader('x-rate-limit-limit', String(rate.limit));
+          res.setHeader('x-rate-limit-remaining', String(rate.remaining));
+          res.setHeader('x-rate-limit-reset', String(rate.resetAfterSeconds));
+          if (!rate.allowed) {
+            throw new HttpError(429, 'RATE_LIMITED', 'Too many public lookup requests', {
+              headers: { 'retry-after': String(rate.retryAfterSeconds) },
+            });
+          }
+        }
+        const snapshot = readiness.snapshot();
+        if (!publicLookupSourcesReady(snapshot)) {
+          throw new HttpError(503, 'SERVICE_NOT_READY', 'Required IP data sources are not ready');
+        }
+        const url = new URL(req.url, 'http://localhost');
+        const requestedIp = url.searchParams.get('ip');
+        const input = requestedIp === null || requestedIp.trim() === '' ? clientAddress : requestedIp;
+        if (typeof input !== 'string' || input.length > 64) {
+          throw new HttpError(400, 'INVALID_REQUEST', 'ip must be a valid IPv4 or IPv6 address');
+        }
+        const result = lookupService.lookupBatch([input]);
+        metrics?.observeLookup(result.meta);
+        const item = result.data[0];
+        if (item?.status === 'invalid') {
+          throw new HttpError(400, 'INVALID_IP', 'Please enter a valid IPv4 or IPv6 address');
+        }
+        sendJson(res, 200, {
+          request_id: requestId,
+          code: 'OK',
+          data: item,
+          meta: result.meta,
+        });
+        return;
+      }
+
+      if (req.method === 'POST' && !isJsonContentType(req.headers['content-type'])) {
+        req.resume();
+        throw new HttpError(415, 'UNSUPPORTED_MEDIA_TYPE', 'Content-Type must be application/json');
+      }
+      const rawBody = req.method === 'POST' ? await readRawBody(req, config.security.maxBodyBytes) : Buffer.alloc(0);
+
+      if (!authenticator) {
+        throw new HttpError(503, 'SERVICE_NOT_READY', 'Authentication service is not configured');
+      }
+
+      const authentication = await authenticator.authenticate({
+        headers: req.headers,
+        method: req.method,
+        requestTarget: req.url,
+        rawBody,
+        requestId,
+      });
+      if (authentication.rate_limit_limit !== undefined) {
+        res.setHeader('x-rate-limit-limit', String(authentication.rate_limit_limit));
+      }
+      res.setHeader('x-rate-limit-remaining', String(authentication.rate_limit_remaining));
+      if (authentication.rate_limit_reset !== undefined) {
+        res.setHeader('x-rate-limit-reset', String(authentication.rate_limit_reset));
+      }
+
+      const snapshot = readiness.snapshot();
+      if (kind === 'ready') {
+        if (!snapshot.required_sources_ready) {
+          throw new HttpError(
+            503,
+            'SERVICE_NOT_READY',
+            'Required IP data sources are not ready',
+            { details: snapshot },
+          );
+        }
+        sendJson(res, 200, { request_id: requestId, ok: true, ...snapshot });
+        return;
+      }
+
+      if (kind === 'sources') {
+        sendJson(res, 200, {
+          request_id: requestId,
+          code: 'OK',
+          data: snapshot.sources.map((source) => ({
+            id: source.id,
+            status: source.status,
+            required: source.required,
+            version: source.version,
+            updated_at: source.updated_at,
+            expires_at: source.expires_at,
+            last_error: source.message,
+          })),
+        });
+        return;
+      }
+
+
+      if (kind === 'observability') {
+        if (!metrics) throw new HttpError(503, 'SERVICE_NOT_READY', 'Metrics service is not configured');
+        sendJson(res, 200, {
+          request_id: requestId,
+          code: 'OK',
+          data: metrics.snapshot({ readiness, updateScheduler, pool: databasePool }),
+        });
+        return;
+      }
+
+      const ips = parseLookupRequest(rawBody);
+      if (!lookupService) {
+        throw new HttpError(503, 'SERVICE_NOT_READY', 'IP lookup service is not configured');
+      }
+      if (!snapshot.required_sources_ready) {
+        throw new HttpError(
+          503,
+          'SERVICE_NOT_READY',
+          'Required IP data sources are not ready',
+          { details: snapshot },
+        );
+      }
+
+      const result = lookupService.lookupBatch(ips);
+      metrics?.observeLookup(result.meta);
+      if (usageRepository) {
+        const bucketStart = new Date(Math.floor(Date.now() / 3_600_000) * 3_600_000);
+        Promise.resolve().then(() => usageRepository.recordUsage({
+          apiClientId: authentication.client.id,
+          bucketStart,
+          requests: 1,
+          ips: result.meta.unique_count,
+          successes: result.meta.resolved_count,
+          errors: result.meta.invalid_count + result.meta.unavailable_count,
+        })).catch((error) => logger.error('usage_record_failed', {
+          request_id: requestId,
+          api_client_id: authentication.client.id,
+          error,
+        }));
+      }
+      sendJson(res, 200, {
+        request_id: requestId,
+        code: 'OK',
+        data: result.data,
+        meta: result.meta,
+      });
+    }
+
+    handle().catch((error) => {
+      if (error instanceof HttpError) {
+        sendError(
+          res,
+          requestId,
+          error.statusCode,
+          error.code,
+          error.message,
+          error.details,
+          error.headers,
+        );
+        return;
+      }
+
+      logger.error('request_failed', {
+        request_id: requestId,
+        method: req.method,
+        route: metricRoute,
+        error,
+      });
+
+      if (!res.headersSent) {
+        sendError(res, requestId, 500, 'INTERNAL_ERROR', 'Internal server error');
+      } else {
+        res.destroy();
+      }
+    });
+  });
+
+  server.requestTimeout = config.http?.requestTimeoutMs ?? 10_000;
+  server.headersTimeout = config.http?.headersTimeoutMs ?? 10_000;
+  server.keepAliveTimeout = config.http?.keepAliveTimeoutMs ?? 5_000;
+  return server;
+}
