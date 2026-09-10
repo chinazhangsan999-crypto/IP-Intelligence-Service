@@ -1,4 +1,4 @@
-:80 {
+ip.chinazhangsan.ccwu.cc {
 	encode zstd gzip
 
 	reverse_proxy app:3101 {
