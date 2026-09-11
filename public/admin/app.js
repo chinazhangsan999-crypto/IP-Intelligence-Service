@@ -11,6 +11,11 @@
     'trend-chart', 'trend-chart-desc', 'trend-empty', 'main-content', 'account-form',
     'account-username', 'current-password', 'new-password', 'confirm-password',
     'account-error', 'account-success', 'account-submit', 'current-account',
+    'client-count', 'client-form', 'client-id', 'client-name', 'client-limit', 'client-submit',
+    'client-error', 'clients-body', 'rule-count', 'rule-form', 'rule-name', 'rule-match-type',
+    'rule-match-value', 'rule-network-type', 'rule-confidence', 'rule-priority', 'rule-hosting',
+    'rule-mobile', 'rule-submit', 'rule-error', 'rules-body', 'run-update-button', 'jobs-body',
+    'audit-count', 'audit-body', 'secret-dialog', 'secret-dialog-title', 'generated-secret', 'copy-secret', 'admin-toast',
   ].map((id) => [id, document.getElementById(id)]));
 
   const numberFormat = new Intl.NumberFormat('zh-CN');
@@ -22,6 +27,7 @@
   let csrfToken = '';
   let refreshing = false;
   let timer = null;
+  let toastTimer = null;
   const samples = [];
   const SVG_NS = 'http://www.w3.org/2000/svg';
 
@@ -104,6 +110,33 @@
     return (await request('/admin/api/observability')).data;
   }
 
+  async function fetchManagement() {
+    return (await request('/admin/api/management')).data;
+  }
+
+  async function postManagement(path, body = {}) {
+    return request(path, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', 'x-csrf-token': csrfToken },
+      body: JSON.stringify(body),
+    });
+  }
+
+  function showToast(message) {
+    clearTimeout(toastTimer);
+    elements['admin-toast'].textContent = message;
+    elements['admin-toast'].hidden = false;
+    toastTimer = setTimeout(() => { elements['admin-toast'].hidden = true; }, 3200);
+  }
+
+  function showSecret(secret, title) {
+    elements['secret-dialog-title'].textContent = title;
+    elements['generated-secret'].value = secret;
+    elements['secret-dialog'].showModal();
+    elements['generated-secret'].focus();
+    elements['generated-secret'].select();
+  }
+
   function applySession(data) {
     authenticated = true;
     csrfToken = data.csrf_token || csrfToken;
@@ -118,6 +151,117 @@
     cell.textContent = text;
     if (className) cell.className = className;
     return cell;
+  }
+
+  function appendEmptyRow(body, message, columns) {
+    const row = document.createElement('tr');
+    const cell = createCell(message);
+    cell.colSpan = columns;
+    row.append(cell);
+    body.append(row);
+  }
+
+  function createStatus(value, labels = {}) {
+    const status = document.createElement('span');
+    status.className = `table-status ${value === 'active' || value === 'succeeded' || value === 'success' ? 'ready' : value === 'running' ? 'stale' : 'unavailable'}`;
+    status.textContent = labels[value] || value || '--';
+    return status;
+  }
+
+  function actionButton(label, action, id, danger = false) {
+    const button = document.createElement('button');
+    button.type = 'button';
+    button.className = `table-button${danger ? ' danger' : ''}`;
+    button.textContent = label;
+    button.dataset.action = action;
+    button.dataset.id = id;
+    return button;
+  }
+
+  function renderManagement(data) {
+    const usage = new Map((data.usage_24h || []).map((row) => [row.client_id, row]));
+    const clients = data.clients || [];
+    elements['client-count'].textContent = `${clients.length} 个`;
+    elements['clients-body'].replaceChildren();
+    if (!clients.length) appendEmptyRow(elements['clients-body'], '尚未创建导航站接入方。', 6);
+    for (const client of clients) {
+      const row = document.createElement('tr');
+      const identity = document.createElement('td');
+      const title = document.createElement('span');
+      title.className = 'row-title';
+      title.textContent = client.display_name;
+      const meta = document.createElement('span');
+      meta.className = 'row-meta mono';
+      meta.textContent = `${client.client_id} · 密钥版本 ${client.secret_version}`;
+      identity.append(title, meta);
+      const statusCell = document.createElement('td');
+      statusCell.append(createStatus(client.status, { active: '启用', disabled: '已暂停' }));
+      const clientUsage = usage.get(client.client_id) || {};
+      const actions = document.createElement('td');
+      const group = document.createElement('div');
+      group.className = 'action-group';
+      group.append(
+        actionButton('轮换密钥', 'rotate-client', client.client_id),
+        actionButton(client.status === 'active' ? '暂停' : '启用', 'toggle-client', client.client_id, client.status === 'active'),
+      );
+      actions.append(group);
+      row.append(
+        identity,
+        statusCell,
+        createCell(`${formatNumber(clientUsage.request_count)} / ${formatNumber(clientUsage.ip_count)} / ${formatNumber(clientUsage.error_count)}`, 'mono'),
+        createCell(`${formatNumber(client.rate_limit_per_minute)} / 分钟`, 'mono'),
+        createCell(formatDate(client.last_used_at)),
+        actions,
+      );
+      row.dataset.status = client.status;
+      elements['clients-body'].append(row);
+    }
+
+    const rules = data.classification_rules || [];
+    elements['rule-count'].textContent = `${rules.length} 条`;
+    elements['rules-body'].replaceChildren();
+    if (!rules.length) appendEmptyRow(elements['rules-body'], '尚未添加数据库判断规则，当前使用内置规则文件。', 6);
+    for (const rule of rules) {
+      const row = document.createElement('tr');
+      const identity = document.createElement('td');
+      const title = document.createElement('span');
+      title.className = 'row-title';
+      title.textContent = rule.name;
+      const meta = document.createElement('span');
+      meta.className = 'row-meta';
+      meta.textContent = `置信度 ${rule.confidence}`;
+      identity.append(title, meta);
+      const statusCell = document.createElement('td');
+      statusCell.append(createStatus(rule.enabled ? 'active' : 'disabled', { active: '启用', disabled: '停用' }));
+      const actions = document.createElement('td');
+      actions.append(actionButton(rule.enabled ? '停用' : '启用', 'toggle-rule', String(rule.id), rule.enabled));
+      row.append(identity, createCell(`${rule.match_type}: ${rule.match_value}`, 'mono'), createCell(rule.network_type), createCell(formatNumber(rule.priority), 'mono'), statusCell, actions);
+      row.dataset.enabled = String(rule.enabled);
+      elements['rules-body'].append(row);
+    }
+
+    const jobs = data.update_jobs || [];
+    elements['jobs-body'].replaceChildren();
+    if (!jobs.length) appendEmptyRow(elements['jobs-body'], '暂无数据更新任务记录。', 6);
+    for (const job of jobs) {
+      const row = document.createElement('tr');
+      const statusCell = document.createElement('td');
+      statusCell.append(createStatus(job.status, { running: '执行中', succeeded: '成功', failed: '失败' }));
+      row.append(createCell(job.source_id, 'mono'), statusCell, createCell(job.target_version || '--', 'mono'), createCell(formatDate(job.started_at)), createCell(formatDate(job.completed_at)), createCell(job.error_message || '--'));
+      elements['jobs-body'].append(row);
+    }
+
+    const audits = data.audit_logs || [];
+    elements['audit-count'].textContent = `${audits.length} 条`;
+    elements['audit-body'].replaceChildren();
+    if (!audits.length) appendEmptyRow(elements['audit-body'], '暂无审计记录。', 5);
+    for (const audit of audits) {
+      const row = document.createElement('tr');
+      const outcome = document.createElement('td');
+      outcome.append(createStatus(audit.outcome, { success: '成功', rejected: '拒绝', failure: '失败' }));
+      row.append(createCell(formatDate(audit.created_at)), createCell(audit.event_type, 'mono'), outcome, createCell(audit.client_id || '系统'), createCell(audit.request_id || '--', 'mono'));
+      elements['audit-body'].append(row);
+    }
   }
 
   function renderSources(readiness) {
@@ -287,9 +431,10 @@
     elements['refresh-button'].disabled = true;
     if (!initial) setStatus('neutral', '正在刷新');
     try {
-      const snapshot = await fetchSnapshot();
+      const [snapshot, management] = await Promise.all([fetchSnapshot(), fetchManagement()]);
       clearError();
       render(snapshot);
+      renderManagement(management);
     } catch (error) {
       if (error.code === 'UNAUTHORIZED') {
         showLogin();
@@ -348,7 +493,7 @@
       return;
     }
     elements['auth-submit'].disabled = true;
-    elements['auth-submit'].textContent = '正在验证...';
+    elements['auth-submit'].textContent = '正在验证…';
     try {
       const login = await request('/admin/api/login', {
         method: 'POST',
@@ -357,8 +502,9 @@
       });
       applySession(login.data);
       elements['login-password'].value = '';
-      const snapshot = await fetchSnapshot();
+      const [snapshot, management] = await Promise.all([fetchSnapshot(), fetchManagement()]);
       render(snapshot);
+      renderManagement(management);
       startPolling();
       window.scrollTo({ top: 0, left: 0 });
       elements['main-content']?.focus({ preventScroll: true });
@@ -409,7 +555,7 @@
       return;
     }
     elements['account-submit'].disabled = true;
-    elements['account-submit'].textContent = '正在保存...';
+    elements['account-submit'].textContent = '正在保存…';
     try {
       await request('/admin/api/account', {
         method: 'POST',
@@ -431,6 +577,127 @@
       elements['account-submit'].textContent = '保存账户设置';
     }
   });
+
+  elements['client-form'].addEventListener('submit', async (event) => {
+    event.preventDefault();
+    elements['client-error'].hidden = true;
+    elements['client-submit'].disabled = true;
+    elements['client-submit'].textContent = '正在创建…';
+    try {
+      const response = await postManagement('/admin/api/clients', {
+        client_id: elements['client-id'].value.trim(),
+        display_name: elements['client-name'].value.trim(),
+        rate_limit_per_minute: Number(elements['client-limit'].value),
+      });
+      showSecret(response.data.secret, '保存新接入密钥');
+      elements['client-form'].reset();
+      elements['client-limit'].value = '600';
+      renderManagement(await fetchManagement());
+    } catch (error) {
+      elements['client-error'].textContent = error.message || '创建失败，请检查输入后重试';
+      elements['client-error'].hidden = false;
+    } finally {
+      elements['client-submit'].disabled = false;
+      elements['client-submit'].textContent = '创建接入方';
+    }
+  });
+
+  elements['clients-body'].addEventListener('click', async (event) => {
+    const button = event.target.closest('button[data-action]');
+    if (!button) return;
+    const clientId = button.dataset.id;
+    const action = button.dataset.action;
+    const currentStatus = button.closest('tr')?.dataset.status;
+    if (action === 'rotate-client' && !window.confirm(`轮换 ${clientId} 的密钥？旧密钥会立即失效。`)) return;
+    if (action === 'toggle-client' && currentStatus === 'active' && !window.confirm(`暂停 ${clientId}？该接入方将无法继续查询。`)) return;
+    button.disabled = true;
+    try {
+      const response = action === 'rotate-client'
+        ? await postManagement(`/admin/api/clients/${encodeURIComponent(clientId)}/rotate`)
+        : await postManagement(`/admin/api/clients/${encodeURIComponent(clientId)}/status`, { status: currentStatus === 'active' ? 'disabled' : 'active' });
+      if (response.data.secret) showSecret(response.data.secret, '保存轮换后的密钥');
+      else showToast(currentStatus === 'active' ? '接入方已暂停' : '接入方已启用');
+      renderManagement(await fetchManagement());
+    } catch (error) {
+      showError(error.message || '操作失败，请稍后重试');
+    } finally {
+      button.disabled = false;
+    }
+  });
+
+  elements['rule-form'].addEventListener('submit', async (event) => {
+    event.preventDefault();
+    elements['rule-error'].hidden = true;
+    elements['rule-submit'].disabled = true;
+    elements['rule-submit'].textContent = '正在保存…';
+    try {
+      await postManagement('/admin/api/classification-rules', {
+        name: elements['rule-name'].value.trim(),
+        match_type: elements['rule-match-type'].value,
+        match_value: elements['rule-match-value'].value.trim(),
+        network_type: elements['rule-network-type'].value,
+        confidence: elements['rule-confidence'].value,
+        priority: Number(elements['rule-priority'].value),
+        flags: {
+          is_hosting: elements['rule-hosting'].checked,
+          is_mobile: elements['rule-mobile'].checked,
+        },
+        enabled: true,
+      });
+      elements['rule-form'].reset();
+      elements['rule-priority'].value = '100';
+      showToast('判断规则已保存并立即生效');
+      renderManagement(await fetchManagement());
+    } catch (error) {
+      elements['rule-error'].textContent = error.message || '规则保存失败，请检查匹配值';
+      elements['rule-error'].hidden = false;
+    } finally {
+      elements['rule-submit'].disabled = false;
+      elements['rule-submit'].textContent = '保存判断规则';
+    }
+  });
+
+  elements['rules-body'].addEventListener('click', async (event) => {
+    const button = event.target.closest('button[data-action="toggle-rule"]');
+    if (!button) return;
+    const enabled = button.closest('tr')?.dataset.enabled === 'true';
+    button.disabled = true;
+    try {
+      await postManagement(`/admin/api/classification-rules/${button.dataset.id}/status`, { enabled: !enabled });
+      showToast(enabled ? '判断规则已停用' : '判断规则已启用');
+      renderManagement(await fetchManagement());
+    } catch (error) {
+      showError(error.message || '规则状态更新失败');
+    } finally {
+      button.disabled = false;
+    }
+  });
+
+  elements['run-update-button'].addEventListener('click', async () => {
+    elements['run-update-button'].disabled = true;
+    elements['run-update-button'].textContent = '正在启动…';
+    try {
+      await postManagement('/admin/api/data-update');
+      showToast('数据更新任务已启动，可在任务列表查看进度');
+      setTimeout(() => refresh(), 1200);
+    } catch (error) {
+      showError(error.message || '无法启动数据更新任务');
+    } finally {
+      elements['run-update-button'].disabled = false;
+      elements['run-update-button'].textContent = '立即检查更新';
+    }
+  });
+
+  elements['copy-secret'].addEventListener('click', async () => {
+    try {
+      await navigator.clipboard.writeText(elements['generated-secret'].value);
+      showToast('接入密钥已复制');
+    } catch {
+      elements['generated-secret'].focus();
+      elements['generated-secret'].select();
+      showToast('无法自动复制，请手动复制选中内容');
+    }
+  });
   elements['refresh-button'].addEventListener('click', () => refresh());
   elements['retry-button'].addEventListener('click', () => refresh());
   elements['logout-button'].addEventListener('click', logout);
@@ -440,7 +707,9 @@
 
   request('/admin/api/session').then(async (response) => {
     applySession(response.data);
-    render(await fetchSnapshot());
+    const [snapshot, management] = await Promise.all([fetchSnapshot(), fetchManagement()]);
+    render(snapshot);
+    renderManagement(management);
     startPolling();
   }).catch(() => {
     showLogin();

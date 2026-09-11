@@ -8,7 +8,7 @@ const FLAG_NAMES = new Set([
   'is_mobile', 'is_hosting', 'is_proxy', 'is_vpn', 'is_tor', 'is_anycast',
 ]);
 
-function normalizeRule(rule, index) {
+export function normalizeClassificationRule(rule, index = 0) {
   const matchType = rule.match_type || rule.matchType;
   const matchValue = String(rule.match_value ?? rule.matchValue ?? '').trim();
   const networkType = rule.network_type || rule.networkType;
@@ -46,7 +46,7 @@ export class ClassificationRuleService {
   }
 
   replaceRules(rules) {
-    this.rules = rules.map(normalizeRule).sort((a, b) => b.priority - a.priority);
+    this.rules = rules.map(normalizeClassificationRule).sort((a, b) => b.priority - a.priority);
     this.cidrMatcher = new PrefixMatcher();
     for (const rule of this.rules) {
       if (rule.matchType === 'cidr') this.cidrMatcher.add(rule.matchValue, rule);

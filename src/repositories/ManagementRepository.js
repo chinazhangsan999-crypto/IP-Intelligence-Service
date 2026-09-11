@@ -85,6 +85,73 @@ export class ManagementRepository {
     return result.rows;
   }
 
+  async listClassificationRules() {
+    const result = await this.pool.query(
+      `SELECT id, name, priority, match_type, match_value, network_type,
+              flags, confidence, enabled, created_at, updated_at
+         FROM network_classification_rules
+        ORDER BY priority DESC, id ASC`,
+    );
+    return result.rows;
+  }
+
+  async setClassificationRuleEnabled(id, enabled) {
+    const result = await this.pool.query(
+      `UPDATE network_classification_rules
+          SET enabled = $2, updated_at = NOW()
+        WHERE id = $1
+      RETURNING id, name, priority, match_type, match_value, network_type,
+                flags, confidence, enabled, created_at, updated_at`,
+      [id, enabled],
+    );
+    return result.rows[0] || null;
+  }
+
+  async getAdminManagementSnapshot() {
+    const [usage, jobs, audits, feedback] = await Promise.all([
+      this.pool.query(
+        `SELECT c.client_id, c.display_name,
+                COALESCE(SUM(u.request_count), 0)::bigint AS request_count,
+                COALESCE(SUM(u.ip_count), 0)::bigint AS ip_count,
+                COALESCE(SUM(u.error_count), 0)::bigint AS error_count
+           FROM api_clients c
+           LEFT JOIN api_usage_hourly u ON u.api_client_id = c.id
+            AND u.bucket_start >= NOW() - INTERVAL '24 hours'
+          GROUP BY c.id
+          ORDER BY c.created_at ASC`,
+      ),
+      this.pool.query(
+        `SELECT id, source_id, status, target_version, started_at, completed_at,
+                error_message
+           FROM update_jobs
+          ORDER BY started_at DESC
+          LIMIT 20`,
+      ),
+      this.pool.query(
+        `SELECT a.id, c.client_id, a.event_type, a.outcome, a.request_id,
+                a.metadata, a.created_at
+           FROM audit_logs a
+           LEFT JOIN api_clients c ON c.id = a.api_client_id
+          ORDER BY a.created_at DESC
+          LIMIT 40`,
+      ),
+      this.pool.query(
+        `SELECT f.id, c.client_id, f.reported_fields, f.notes, f.status,
+                f.resolution, f.created_at, f.updated_at
+           FROM lookup_feedback f
+           LEFT JOIN api_clients c ON c.id = f.api_client_id
+          ORDER BY f.created_at DESC
+          LIMIT 30`,
+      ),
+    ]);
+    return {
+      usage_24h: usage.rows,
+      update_jobs: jobs.rows,
+      audit_logs: audits.rows,
+      feedback: feedback.rows,
+    };
+  }
+
   async saveClassificationRule(rule) {
     const result = await this.pool.query(
       `INSERT INTO network_classification_rules (

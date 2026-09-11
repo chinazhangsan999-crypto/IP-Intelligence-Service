@@ -189,6 +189,52 @@ test('admin shell uses account sessions while metrics keeps its separate bearer 
   });
 });
 
+test('admin management endpoints require session and CSRF and never list stored secrets', async () => {
+  const readiness = createReadiness([{ id: 'dbip-city', required: true, ready: true }]);
+  const cookie = `ip_admin_session=${'s'.repeat(64)}`;
+  const adminAuthService = {
+    async authenticate(token) {
+      return token === 's'.repeat(64) ? { admin_user_id: 1, username: 'admin', tokenHash: 'hash' } : null;
+    },
+    verifyCsrf(_session, token) { return token === 'csrf-value'; },
+  };
+  const apiClientService = {
+    async listClients() { return [{ client_id: 'nav-main', display_name: 'Main', status: 'active' }]; },
+    async createClient(input) { return { client: { client_id: input.clientId }, secret: 'one-time-secret' }; },
+  };
+  const managementRepository = {
+    async listClassificationRules() { return []; },
+    async getAdminManagementSnapshot() { return { usage_24h: [], update_jobs: [], audit_logs: [], feedback: [] }; },
+    async recordAudit() {},
+  };
+  await withServer(readiness, async (baseUrl) => {
+    assert.equal((await fetch(`${baseUrl}/admin/api/management`)).status, 401);
+    const snapshot = await fetch(`${baseUrl}/admin/api/management`, { headers: { cookie } });
+    const snapshotBody = await snapshot.json();
+    assert.equal(snapshot.status, 200);
+    assert.equal(snapshotBody.data.clients[0].client_id, 'nav-main');
+    assert.equal(JSON.stringify(snapshotBody).includes('secret_ciphertext'), false);
+
+    const rejected = await fetch(`${baseUrl}/admin/api/clients`, {
+      method: 'POST', headers: { cookie, 'content-type': 'application/json' }, body: '{}',
+    });
+    assert.equal(rejected.status, 403);
+
+    const created = await fetch(`${baseUrl}/admin/api/clients`, {
+      method: 'POST',
+      headers: { cookie, 'content-type': 'application/json', 'x-csrf-token': 'csrf-value' },
+      body: JSON.stringify({ client_id: 'nav-test', display_name: 'Test', rate_limit_per_minute: 60 }),
+    });
+    const createdBody = await created.json();
+    assert.equal(created.status, 201);
+    assert.equal(createdBody.data.secret, 'one-time-secret');
+  }, allowAuthenticator, null, null, {
+    adminAuthService,
+    apiClientService,
+    managementRepository,
+  });
+});
+
 test('public lookup shell and single-IP endpoint work without exposing HMAC credentials', async () => {
   const readiness = createReadiness([
     { id: 'dbip-city', required: true, ready: true },

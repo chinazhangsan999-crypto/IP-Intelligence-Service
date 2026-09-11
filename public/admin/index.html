@@ -4,6 +4,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="color-scheme" content="light">
+  <meta name="theme-color" content="#f4f7fb">
   <title>IP Intelligence · 运维中心</title>
   <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='16' fill='%232563eb'/%3E%3Cpath fill='white' d='M32 10 50 19v13c0 11-7.7 19.1-18 22-10.3-2.9-18-11-18-22V19l18-9Zm0 10-8 4v8c0 5.2 3.1 9.3 8 11.4 4.9-2.1 8-6.2 8-11.4v-8l-8-4Z'/%3E%3C/svg%3E">
   <link rel="stylesheet" href="/admin/app.css">
@@ -19,7 +20,7 @@
       </div>
       <p class="eyebrow">IP INTELLIGENCE SERVICE</p>
       <h1 id="auth-title">进入运维中心</h1>
-      <p class="auth-copy">查看服务健康度、查询负载、数据源和自动更新状态。</p>
+      <p class="auth-copy">查看运行状态，并管理导航站接入、判断规则与数据更新。</p>
       <form id="auth-form" novalidate>
         <label for="login-username">管理账号</label>
         <input class="form-input" id="login-username" name="username" type="text" autocomplete="username" required maxlength="64" spellcheck="false">
@@ -55,8 +56,17 @@
       </div>
     </header>
 
+    <nav class="console-nav" aria-label="运维中心栏目">
+      <a href="#overview">运行概览</a>
+      <a href="#clients">接入方</a>
+      <a href="#rules">判断规则</a>
+      <a href="#data-operations">数据更新</a>
+      <a href="#audit">审计记录</a>
+      <a href="#account">账户安全</a>
+    </nav>
+
     <main id="main-content" class="dashboard" tabindex="-1">
-      <div class="page-heading">
+      <div class="page-heading" id="overview">
         <div><p class="eyebrow">SYSTEM OVERVIEW</p><h1>运行概览</h1><p>本实例实时状态，数据每 15 秒自动刷新。</p></div>
         <div class="updated-at">最后刷新 <time id="updated-at">--</time></div>
       </div>
@@ -101,7 +111,46 @@
         <div class="table-scroll"><table><thead><tr><th scope="col">方法</th><th scope="col">路由</th><th scope="col">请求数</th><th scope="col">平均耗时</th><th scope="col">P95 上界</th></tr></thead><tbody id="routes-body"></tbody></table></div>
       </section>
 
-      <section class="panel account-panel" aria-labelledby="account-title">
+      <section class="panel management-panel" id="clients" aria-labelledby="clients-title">
+        <div class="panel-heading"><div><h2 id="clients-title">导航站接入方</h2><p>创建、暂停或轮换 API 接入凭证。密钥仅在生成时显示一次。</p></div><span class="count-badge" id="client-count">0 个</span></div>
+        <form class="inline-form" id="client-form" novalidate>
+          <div class="field-group"><label for="client-id">接入方 ID</label><input class="form-input" id="client-id" name="client_id" type="text" autocomplete="off" spellcheck="false" minlength="3" maxlength="64" placeholder="例如 nav-shanghai…" required></div>
+          <div class="field-group"><label for="client-name">显示名称</label><input class="form-input" id="client-name" name="display_name" type="text" autocomplete="off" maxlength="128" placeholder="例如 上海导航站…" required></div>
+          <div class="field-group"><label for="client-limit">每分钟上限</label><input class="form-input" id="client-limit" name="rate_limit_per_minute" type="number" inputmode="numeric" min="1" max="100000" value="600" required></div>
+          <button class="primary-button compact" id="client-submit" type="submit">创建接入方</button>
+        </form>
+        <p class="form-error" id="client-error" role="alert" hidden></p>
+        <div class="table-scroll"><table><thead><tr><th scope="col">接入方</th><th scope="col">状态</th><th scope="col">24h 请求 / IP / 错误</th><th scope="col">限速</th><th scope="col">最近使用</th><th scope="col">操作</th></tr></thead><tbody id="clients-body"></tbody></table></div>
+      </section>
+
+      <section class="panel management-panel" id="rules" aria-labelledby="rules-title">
+        <div class="panel-heading"><div><h2 id="rules-title">网络判断规则</h2><p>规则按优先级匹配 ASN、组织名称或 CIDR，保存后立即用于新查询。</p></div><span class="count-badge" id="rule-count">0 条</span></div>
+        <form class="rule-form" id="rule-form" novalidate>
+          <div class="field-group"><label for="rule-name">规则名称</label><input class="form-input" id="rule-name" name="name" type="text" autocomplete="off" maxlength="128" placeholder="例如 国内云厂商网段…" required></div>
+          <div class="field-group"><label for="rule-match-type">匹配方式</label><select class="form-input" id="rule-match-type" name="match_type"><option value="asn">ASN</option><option value="asn_org">ASN 组织名称</option><option value="cidr">CIDR 网段</option></select></div>
+          <div class="field-group"><label for="rule-match-value">匹配值</label><input class="form-input" id="rule-match-value" name="match_value" type="text" autocomplete="off" spellcheck="false" maxlength="256" placeholder="例如 15169 或 203.0.113.0/24…" required></div>
+          <div class="field-group"><label for="rule-network-type">网络类型</label><select class="form-input" id="rule-network-type" name="network_type"><option value="hosting">云主机 / 数据中心</option><option value="cdn">CDN</option><option value="residential">住宅宽带</option><option value="mobile">移动网络</option><option value="business">企业 / 专线</option><option value="education">教育 / 机构</option><option value="government">政府网络</option><option value="unknown">未知</option></select></div>
+          <div class="field-group"><label for="rule-confidence">置信度</label><select class="form-input" id="rule-confidence" name="confidence"><option value="high">高</option><option value="medium" selected>中等</option><option value="low">较低</option></select></div>
+          <div class="field-group"><label for="rule-priority">优先级</label><input class="form-input" id="rule-priority" name="priority" type="number" inputmode="numeric" min="-100000" max="100000" value="100" required></div>
+          <label class="check-field"><input id="rule-hosting" name="is_hosting" type="checkbox"> 标记为托管网络</label>
+          <label class="check-field"><input id="rule-mobile" name="is_mobile" type="checkbox"> 标记为移动网络</label>
+          <button class="primary-button compact" id="rule-submit" type="submit">保存判断规则</button>
+        </form>
+        <p class="form-error" id="rule-error" role="alert" hidden></p>
+        <div class="table-scroll"><table><thead><tr><th scope="col">规则</th><th scope="col">匹配条件</th><th scope="col">结论</th><th scope="col">优先级</th><th scope="col">状态</th><th scope="col">操作</th></tr></thead><tbody id="rules-body"></tbody></table></div>
+      </section>
+
+      <section class="panel management-panel" id="data-operations" aria-labelledby="data-operations-title">
+        <div class="panel-heading"><div><h2 id="data-operations-title">数据更新与任务</h2><p>可立即启动一次完整更新。下载、校验与热重载在后台执行。</p></div><button class="secondary-button" id="run-update-button" type="button">立即检查更新</button></div>
+        <div class="table-scroll"><table><thead><tr><th scope="col">任务</th><th scope="col">状态</th><th scope="col">目标版本</th><th scope="col">开始时间</th><th scope="col">完成时间</th><th scope="col">错误</th></tr></thead><tbody id="jobs-body"></tbody></table></div>
+      </section>
+
+      <section class="panel management-panel" id="audit" aria-labelledby="audit-title">
+        <div class="panel-heading"><div><h2 id="audit-title">最近审计记录</h2><p>展示鉴权和管理员写操作结果，不保存原始查询 IP。</p></div><span class="count-badge" id="audit-count">0 条</span></div>
+        <div class="table-scroll"><table><thead><tr><th scope="col">时间</th><th scope="col">事件</th><th scope="col">结果</th><th scope="col">接入方</th><th scope="col">请求 ID</th></tr></thead><tbody id="audit-body"></tbody></table></div>
+      </section>
+
+      <section class="panel account-panel" id="account" aria-labelledby="account-title">
         <div class="panel-heading"><div><h2 id="account-title">账户安全</h2><p>修改管理账号或密码。保存后所有已登录设备都会退出。</p></div><span class="count-badge" id="current-account">--</span></div>
         <form id="account-form" novalidate>
           <div class="account-grid">
@@ -130,5 +179,16 @@
       </section>
     </main>
   </div>
+  <dialog class="secret-dialog" id="secret-dialog" aria-labelledby="secret-dialog-title">
+    <form method="dialog">
+      <div class="dialog-heading"><div><span>一次性凭证</span><h2 id="secret-dialog-title">立即保存接入密钥</h2></div><button class="icon-button" type="submit" aria-label="关闭密钥窗口">×</button></div>
+      <p>关闭后无法再次查看；遗失时只能轮换生成新密钥。</p>
+      <label for="generated-secret">接入密钥</label>
+      <div class="secret-row"><input id="generated-secret" type="text" readonly spellcheck="false" aria-describedby="secret-warning"><button class="secondary-button" id="copy-secret" type="button">复制密钥</button></div>
+      <p class="warning-copy" id="secret-warning">请将密钥保存到接入站服务器的安全环境变量中。</p>
+      <button class="primary-button" type="submit">我已安全保存</button>
+    </form>
+  </dialog>
+  <div class="toast" id="admin-toast" role="status" aria-live="polite" hidden></div>
 </body>
 </html>

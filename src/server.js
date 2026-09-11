@@ -3,6 +3,7 @@ import { timingSafeEqual } from 'node:crypto';
 import { HttpError } from './http/HttpError.js';
 import { sendError, sendJson } from './http/respond.js';
 import { resolveRequestId } from './utils/requestId.js';
+import { normalizeClassificationRule } from './services/ClassificationRuleService.js';
 
 function getPathname(req) {
   try {
@@ -46,6 +47,13 @@ function routeKind(method, pathname) {
   if (method === 'POST' && pathname === '/admin/api/logout') return 'admin-logout';
   if (method === 'POST' && pathname === '/admin/api/account') return 'admin-account';
   if (method === 'GET' && pathname === '/admin/api/observability') return 'admin-observability';
+  if (method === 'GET' && pathname === '/admin/api/management') return 'admin-management';
+  if (method === 'POST' && pathname === '/admin/api/clients') return 'admin-client-create';
+  if (method === 'POST' && /^\/admin\/api\/clients\/[^/]+\/rotate$/.test(pathname)) return 'admin-client-rotate';
+  if (method === 'POST' && /^\/admin\/api\/clients\/[^/]+\/status$/.test(pathname)) return 'admin-client-status';
+  if (method === 'POST' && pathname === '/admin/api/classification-rules') return 'admin-rule-save';
+  if (method === 'POST' && /^\/admin\/api\/classification-rules\/\d+\/status$/.test(pathname)) return 'admin-rule-status';
+  if (method === 'POST' && pathname === '/admin/api/data-update') return 'admin-data-update';
   if (method === 'GET' && pathname === '/health') return 'health';
   if (method === 'GET' && pathname === '/metrics') return 'metrics';
   if (method === 'GET' && pathname === '/ready') return 'ready';
@@ -56,6 +64,8 @@ function routeKind(method, pathname) {
 }
 
 function allowedMethods(pathname) {
+  if (/^\/admin\/api\/clients\/[^/]+\/(rotate|status)$/.test(pathname)) return ['POST'];
+  if (/^\/admin\/api\/classification-rules\/\d+\/status$/.test(pathname)) return ['POST'];
   return {
     '/': ['GET'],
     '/app.css': ['GET'],
@@ -70,6 +80,10 @@ function allowedMethods(pathname) {
     '/admin/api/logout': ['POST'],
     '/admin/api/account': ['POST'],
     '/admin/api/observability': ['GET'],
+    '/admin/api/management': ['GET'],
+    '/admin/api/clients': ['POST'],
+    '/admin/api/classification-rules': ['POST'],
+    '/admin/api/data-update': ['POST'],
     '/health': ['GET'],
     '/metrics': ['GET'],
     '/ready': ['GET'],
@@ -80,6 +94,8 @@ function allowedMethods(pathname) {
 }
 
 function routeLabel(pathname) {
+  if (/^\/admin\/api\/clients\/[^/]+\/(rotate|status)$/.test(pathname)) return '/admin/api/clients/:id/action';
+  if (/^\/admin\/api\/classification-rules\/\d+\/status$/.test(pathname)) return '/admin/api/classification-rules/:id/status';
   if (allowedMethods(pathname)) return pathname;
   return 'unmatched';
 }
@@ -234,6 +250,9 @@ export function createHttpServer({
   publicRateLimiter = null,
   adminAuthService = null,
   adminRateLimiter = null,
+  apiClientService = null,
+  managementRepository = null,
+  reloadClassificationRules = null,
 }) {
   const server = http.createServer((req, res) => {
     const startedAt = process.hrtime.bigint();
@@ -386,7 +405,8 @@ export function createHttpServer({
           return;
         }
 
-        if (kind === 'admin-logout' || kind === 'admin-account') {
+        const adminMutation = req.method === 'POST' && !['admin-login'].includes(kind);
+        if (adminMutation) {
           requireSameOrigin(req);
           if (!adminAuthService.verifyCsrf(session, req.headers['x-csrf-token'])) {
             throw new HttpError(403, 'CSRF_REJECTED', '安全校验失败，请重新登录');
@@ -427,6 +447,91 @@ export function createHttpServer({
           code: 'OK',
           data: metrics.snapshot({ readiness, updateScheduler, pool: databasePool }),
         });
+        return;
+      }
+
+      if (kind === 'admin-management') {
+        if (!apiClientService || !managementRepository) throw new HttpError(503, 'SERVICE_NOT_READY', '管理数据尚未就绪');
+        const [clients, rules, activity] = await Promise.all([
+          apiClientService.listClients(),
+          managementRepository.listClassificationRules(),
+          managementRepository.getAdminManagementSnapshot(),
+        ]);
+        sendJson(res, 200, {
+          request_id: requestId,
+          code: 'OK',
+          data: { clients, classification_rules: rules, ...activity },
+        });
+        return;
+      }
+
+      if (['admin-client-create', 'admin-client-rotate', 'admin-client-status', 'admin-rule-save', 'admin-rule-status'].includes(kind)) {
+        if (!isJsonContentType(req.headers['content-type'])) {
+          req.resume();
+          throw new HttpError(415, 'UNSUPPORTED_MEDIA_TYPE', 'Content-Type must be application/json');
+        }
+        if (!apiClientService || !managementRepository) throw new HttpError(503, 'SERVICE_NOT_READY', '管理数据尚未就绪');
+        const payload = parseJsonObject(await readRawBody(req, config.security.maxBodyBytes));
+        try {
+          if (kind === 'admin-client-create') {
+            const result = await apiClientService.createClient({
+              clientId: payload.client_id,
+              displayName: payload.display_name,
+              rateLimitPerMinute: Number(payload.rate_limit_per_minute),
+            });
+            await managementRepository.recordAudit({ eventType: 'admin_client_create', outcome: 'success', requestId, metadata: { client_id: result.client.client_id } });
+            sendJson(res, 201, { request_id: requestId, code: 'OK', data: result });
+            return;
+          }
+          const clientMatch = pathname.match(/^\/admin\/api\/clients\/([^/]+)\/(rotate|status)$/);
+          if (clientMatch) {
+            const clientId = decodeURIComponent(clientMatch[1]);
+            const result = kind === 'admin-client-rotate'
+              ? await apiClientService.rotateClientSecret(clientId)
+              : { client: await apiClientService.setClientStatus(clientId, payload.status) };
+            if (!result?.client) throw new HttpError(404, 'NOT_FOUND', '接入方不存在');
+            await managementRepository.recordAudit({ eventType: kind, outcome: 'success', requestId, metadata: { client_id: clientId } });
+            sendJson(res, 200, { request_id: requestId, code: 'OK', data: result });
+            return;
+          }
+          if (kind === 'admin-rule-save') {
+            const normalizedRule = normalizeClassificationRule({
+              name: payload.name,
+              priority: Number(payload.priority),
+              matchType: payload.match_type,
+              matchValue: payload.match_value,
+              networkType: payload.network_type,
+              confidence: payload.confidence,
+              flags: payload.flags,
+              enabled: payload.enabled,
+            });
+            const rule = await managementRepository.saveClassificationRule({ ...normalizedRule, enabled: payload.enabled });
+            await reloadClassificationRules?.();
+            await managementRepository.recordAudit({ eventType: 'admin_rule_save', outcome: 'success', requestId, metadata: { rule_id: rule.id, name: rule.name } });
+            sendJson(res, 200, { request_id: requestId, code: 'OK', data: { rule } });
+            return;
+          }
+          const ruleId = Number(pathname.match(/classification-rules\/(\d+)\/status$/)?.[1]);
+          const rule = await managementRepository.setClassificationRuleEnabled(ruleId, payload.enabled === true);
+          if (!rule) throw new HttpError(404, 'NOT_FOUND', '判断规则不存在');
+          await reloadClassificationRules?.();
+          await managementRepository.recordAudit({ eventType: 'admin_rule_status', outcome: 'success', requestId, metadata: { rule_id: rule.id, enabled: rule.enabled } });
+          sendJson(res, 200, { request_id: requestId, code: 'OK', data: { rule } });
+          return;
+        } catch (error) {
+          if (error instanceof HttpError) throw error;
+          if (error?.code === '23505') throw new HttpError(409, 'ALREADY_EXISTS', '名称或接入方 ID 已存在');
+          throw new HttpError(422, 'INVALID_MANAGEMENT_INPUT', String(error.message || '管理参数无效'));
+        }
+      }
+
+      if (kind === 'admin-data-update') {
+        if (!updateScheduler) throw new HttpError(503, 'SERVICE_NOT_READY', '数据更新器尚未就绪');
+        if (updateScheduler.snapshot().running) throw new HttpError(409, 'UPDATE_RUNNING', '数据更新任务正在执行');
+        if (isJsonContentType(req.headers['content-type'])) parseJsonObject(await readRawBody(req, config.security.maxBodyBytes));
+        void updateScheduler.runCycle();
+        await managementRepository?.recordAudit({ eventType: 'admin_data_update', outcome: 'success', requestId, metadata: { trigger: 'manual' } });
+        sendJson(res, 202, { request_id: requestId, code: 'ACCEPTED', data: { started: true } });
         return;
       }
       }

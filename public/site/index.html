@@ -4,6 +4,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="color-scheme" content="dark">
+  <meta name="theme-color" content="#070a12">
   <meta name="description" content="查询 IPv4、IPv6 的地理位置、ASN、网络类型与代理风险信号。">
   <title>IP Intelligence · 网络身份查询</title>
   <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='16' fill='%23080b14'/%3E%3Cpath fill='%2338bdf8' d='M32 8 52 18v14c0 12.3-8.5 21.2-20 24-11.5-2.8-20-11.7-20-24V18L32 8Zm0 10-10 5v9c0 6.3 3.8 11.2 10 13.7 6.2-2.5 10-7.4 10-13.7v-9l-10-5Z'/%3E%3C/svg%3E">
@@ -40,7 +41,7 @@
           <span class="search-icon" aria-hidden="true">
             <svg viewBox="0 0 24 24"><path d="m21 20-4.7-4.7a7.5 7.5 0 1 0-1.4 1.4L19.6 21 21 20ZM5 11a5.5 5.5 0 1 1 11 0 5.5 5.5 0 0 1-11 0Z"/></svg>
           </span>
-          <input id="ip-input" name="ip" type="text" inputmode="text" autocomplete="off" spellcheck="false" maxlength="64" placeholder="例如 1.1.1.1 或 2606:4700:4700::1111" aria-describedby="input-help input-error">
+          <input id="ip-input" name="ip" type="text" inputmode="text" autocomplete="off" spellcheck="false" maxlength="64" placeholder="例如 1.1.1.1 或 2606:4700:4700::1111…" aria-describedby="input-help input-error">
           <button id="lookup-button" type="submit">
             <span>开始查询</span>
             <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 11h11.2l-4.6-4.6L13 5l7 7-7 7-1.4-1.4 4.6-4.6H5v-2Z"/></svg>
@@ -83,11 +84,14 @@
             </div>
             <div class="confidence-block"><span>结论置信度</span><strong id="confidence-value">--</strong><small id="source-count">0 个数据源</small></div>
           </div>
-          <dl class="identity-grid">
+          <p class="location-alert" id="location-alert" role="status" hidden></p>
+          <dl class="identity-grid extended">
             <div><dt>国家 / 地区</dt><dd id="location-country">--</dd><small id="location-detail">--</small></div>
             <div><dt>ASN</dt><dd id="asn-value">--</dd><small id="asn-org">--</small></div>
             <div><dt>网络类型</dt><dd id="network-type">--</dd><small id="network-note">综合规则判断</small></div>
             <div><dt>运营商 / ISP</dt><dd id="isp-value">--</dd><small>若数据源提供</small></div>
+            <div><dt>邮编 / 时区</dt><dd id="timezone-value">--</dd><small id="postcode-value">--</small></div>
+            <div><dt>经纬度</dt><dd id="coordinates-value">--</dd><small>数据库定位中心点，并非设备位置</small></div>
           </dl>
         </article>
 

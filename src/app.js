@@ -74,6 +74,7 @@ async function start() {
     ruleService,
     ...supplementalProviders,
   ];
+  const baseClassificationRules = [...ruleService.rules];
   const readiness = createReadiness([
     { id: 'postgres', required: true, ready: false, message: 'Not configured' },
     ...intelligenceSources.map((provider) => provider.publicState()),
@@ -114,6 +115,7 @@ async function start() {
   let authenticator = null;
   let managementRepository = null;
   let adminAuthService = null;
+  let apiClientService = null;
 
   if (pool) {
     try {
@@ -121,15 +123,15 @@ async function start() {
       await runMigrations(pool, logger);
       readiness.set('postgres', { ready: true, message: null });
       const clientRepository = new ApiClientRepository(pool);
-      const clientService = new ApiClientService(clientRepository, config.clientSecretMasterKey);
+      apiClientService = new ApiClientService(clientRepository, config.clientSecretMasterKey);
       managementRepository = new ManagementRepository(pool);
       const adminAuthRepository = new AdminAuthRepository(pool);
       adminAuthService = new AdminAuthService(adminAuthRepository);
       const databaseRules = await managementRepository.listEnabledClassificationRules();
-      ruleService.replaceRules([...ruleService.rules, ...databaseRules]);
+      ruleService.replaceRules([...baseClassificationRules, ...databaseRules]);
       authenticator = new RequestAuthenticator({
         clientRepository,
-        clientService,
+        clientService: apiClientService,
         replayGuard: new ReplayGuard({
           ttlSeconds: config.security.nonceTtlSeconds,
           maxEntries: config.security.nonceMaxEntries,
@@ -269,6 +271,12 @@ async function start() {
     metrics,
   });
 
+  async function reloadClassificationRules() {
+    if (!managementRepository) return;
+    const databaseRules = await managementRepository.listEnabledClassificationRules();
+    ruleService.replaceRules([...baseClassificationRules, ...databaseRules]);
+  }
+
   const server = createHttpServer({
     config,
     logger,
@@ -284,6 +292,9 @@ async function start() {
     publicRateLimiter,
     adminAuthService,
     adminRateLimiter: new ClientRateLimiter({ maxEntries: 10_000 }),
+    apiClientService,
+    managementRepository,
+    reloadClassificationRules,
   });
   try {
     await new Promise((resolve, reject) => {

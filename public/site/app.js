@@ -8,8 +8,8 @@
     'error-title', 'error-message', 'retry-button', 'ip-version', 'scope-label',
     'result-ip', 'copy-ip', 'generated-at', 'confidence-value', 'source-count',
     'location-country', 'location-detail', 'asn-value', 'asn-org', 'network-type',
-    'network-note', 'isp-value', 'signal-grid', 'evidence-count', 'evidence-list',
-    'source-list', 'toast',
+    'network-note', 'isp-value', 'timezone-value', 'postcode-value', 'coordinates-value',
+    'location-alert', 'signal-grid', 'evidence-count', 'evidence-list', 'source-list', 'toast',
   ].map((id) => [id, byId(id)]));
 
   const labels = Object.freeze({
@@ -18,12 +18,13 @@
       link_local: '链路本地', multicast: '组播地址', reserved: '保留地址', unknown: '未知范围',
     },
     network: {
-      residential: '住宅宽带', mobile: '移动网络', enterprise: '企业 / 专线',
-      education: '教育 / 机构', hosting: '云主机 / 数据中心', unknown: '类型未知',
+      residential: '住宅宽带', mobile: '移动网络', business: '企业 / 专线',
+      education: '教育 / 机构', government: '政府网络', hosting: '云主机 / 数据中心',
+      cdn: 'CDN / 边缘网络', unknown: '类型未知',
     },
     confidence: { high: '高', medium: '中等', low: '较低', unknown: '未知' },
     fields: {
-      country_code: '国家代码', region: '地区', city: '城市', asn: 'ASN',
+      country_code: '国家代码', region: '地区', city: '城市', location_conflict: '位置来源冲突', asn: 'ASN',
       asn_org: 'ASN 归属', network_type: '网络类型', isp: '运营商',
       is_mobile: '移动网络', is_hosting: '托管网络', is_proxy: '代理',
       is_vpn: 'VPN', is_tor: 'Tor', is_anycast: 'Anycast',
@@ -183,6 +184,20 @@
     elements['network-type'].textContent = labels.network[data.network_type] || text(data.network_type);
     elements['network-note'].textContent = data.network_type === 'unknown' ? '数据不足，暂不判断' : '综合本地规则判断';
     elements['isp-value'].textContent = text(data.isp);
+    elements['timezone-value'].textContent = text(data.timezone);
+    elements['postcode-value'].textContent = data.postcode ? `邮编 ${data.postcode}` : '暂无邮编数据';
+    elements['coordinates-value'].textContent = data.latitude !== null && data.latitude !== undefined
+      && data.longitude !== null && data.longitude !== undefined
+      && Number.isFinite(Number(data.latitude)) && Number.isFinite(Number(data.longitude))
+      ? `${Number(data.latitude).toFixed(4)}, ${Number(data.longitude).toFixed(4)}`
+      : '暂无数据';
+    const locationConflict = Array.isArray(data.evidence)
+      ? data.evidence.find((item) => item.field === 'location_conflict')
+      : null;
+    elements['location-alert'].hidden = !locationConflict;
+    elements['location-alert'].textContent = locationConflict
+      ? '不同数据源对国家与城市的判断不一致，系统已保留国家结论并隐藏冲突的城市坐标。'
+      : '';
     renderSignals(data);
     renderEvidence(data.evidence);
     renderSources(data, meta);

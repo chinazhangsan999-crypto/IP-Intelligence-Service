@@ -159,6 +159,18 @@ X-Signature: <64位小写十六进制HMAC-SHA256>
 - `GET /ready`：判断提供查询所需的必需数据源是否可用。
 - `GET /v1/meta/sources`：返回数据源状态、版本、更新时间和是否过期；不返回服务器文件路径。
 - `GET /v1/meta/observability`：返回当前实例的聚合请求、查询、更新器、内存和连接池状态；使用现有 HMAC 鉴权。
+
+管理员会话接口：
+
+- `GET /admin/api/management`：接入方、24 小时用量、判断规则、更新任务和审计记录；
+- `POST /admin/api/clients`：创建接入方并一次性返回新密钥；
+- `POST /admin/api/clients/:id/rotate`：轮换接入密钥；
+- `POST /admin/api/clients/:id/status`：启用或暂停接入方；
+- `POST /admin/api/classification-rules`：新增或覆盖同名判断规则；
+- `POST /admin/api/classification-rules/:id/status`：启用或停用判断规则；
+- `POST /admin/api/data-update`：启动后台数据更新任务。
+
+除只读 GET 外，上述管理员写接口都要求同源请求和 `X-CSRF-Token`。
 - `GET /metrics`：返回 Prometheus 文本指标；默认关闭，启用后使用独立 Bearer Token，不使用导航站 HMAC 密钥。
 
 正式查询接口在 City、ASN 等任一必需数据源未就绪时返回 HTTP 503，不会用空结果伪装成功。Tor、IP2Proxy 和公共云网段属于可选数据源，不会单独阻止查询；不具备判断能力的字段保持 `null`。

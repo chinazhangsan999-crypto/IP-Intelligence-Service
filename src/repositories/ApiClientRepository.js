@@ -56,14 +56,18 @@ export class ApiClientRepository {
   }
 
   async disable(clientId) {
+    return this.setStatus(clientId, 'disabled');
+  }
+
+  async setStatus(clientId, status) {
     const result = await this.pool.query(
       `UPDATE api_clients
-          SET status = 'disabled', updated_at = NOW()
+          SET status = $2, updated_at = NOW()
         WHERE client_id = $1
       RETURNING id, client_id, display_name, secret_fingerprint, secret_version,
                 status, rate_limit_per_minute, last_used_at, rotated_at,
                 created_at, updated_at`,
-      [clientId],
+      [clientId, status],
     );
     return result.rows[0] || null;
   }
