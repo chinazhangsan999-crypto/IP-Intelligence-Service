@@ -6,6 +6,7 @@ node_modules
 .env.*
 coverage
 *.log
+data
 data/*.tmp-*
 data/*.backup-*
 data/.*.backup.mmdb

@@ -1,5 +1,8 @@
 import assert from 'node:assert/strict';
-import { readFile } from 'node:fs/promises';
+import { createHash } from 'node:crypto';
+import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import path from 'node:path';
 import test from 'node:test';
 import { runMigrations } from '../src/database/migrator.js';
 
@@ -45,4 +48,32 @@ test('migrator applies an unapplied migration transactionally', async () => {
   assert.ok(statements.some((entry) => entry.sql.includes('CREATE TABLE api_clients')));
   assert.ok(statements.some((entry) => entry.sql.includes('CREATE TABLE IF NOT EXISTS admin_users')));
   assert.equal(statements.at(-1).sql, 'RELEASE');
+});
+
+test('migrator treats LF and CRLF migration content as the same SQL', async () => {
+  const migrationsDir = await mkdtemp(path.join(tmpdir(), 'ip-migrations-'));
+  const filename = '001_line_endings.sql';
+  const lfSql = 'CREATE TABLE example (\n  id INTEGER PRIMARY KEY\n);\n';
+  await writeFile(path.join(migrationsDir, filename), lfSql.replaceAll('\n', '\r\n'));
+  const storedChecksum = createHash('sha256').update(lfSql).digest('hex');
+  const client = {
+    async query(sql) {
+      if (sql === 'SELECT filename, checksum FROM schema_migrations') {
+        return { rows: [{ filename, checksum: storedChecksum }] };
+      }
+      return { rows: [] };
+    },
+    release() {},
+  };
+
+  try {
+    const result = await runMigrations(
+      { async connect() { return client; } },
+      { info() {} },
+      migrationsDir,
+    );
+    assert.equal(result.applied_count, 0);
+  } finally {
+    await rm(migrationsDir, { recursive: true, force: true });
+  }
 });

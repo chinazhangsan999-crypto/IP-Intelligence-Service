@@ -7,7 +7,8 @@ const DEFAULT_MIGRATIONS_DIR = fileURLToPath(new URL('./migrations/', import.met
 const MIGRATION_LOCK_NAME = 'ip-intelligence-service:migrations';
 
 function checksum(content) {
-  return createHash('sha256').update(content).digest('hex');
+  const normalized = content.replace(/\r\n?/g, '\n');
+  return createHash('sha256').update(normalized).digest('hex');
 }
 
 export async function runMigrations(pool, logger, migrationsDir = DEFAULT_MIGRATIONS_DIR) {
