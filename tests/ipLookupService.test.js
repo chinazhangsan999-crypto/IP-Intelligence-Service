@@ -127,3 +127,18 @@ test('does not combine city fields from different providers into one location', 
   assert.equal(result.timezone, null);
   assert.ok(result.source_claims.some((claim) => claim.value === 'Elsewhere/Time'));
 });
+
+test('does not present a conflicting city country as a coherent user location', () => {
+  const userCountry = provider('sapics-user-country', { '2001:4860:4860::8888': { country_code: 'US' } });
+  const city = provider('dbip-city', { '2001:4860:4860::8888': {
+    country: { iso_code: 'CA', names: { en: 'Canada' } }, city: { names: { en: 'Montreal' } },
+    location: { latitude: 45.5, longitude: -73.5 },
+  } });
+  const service = new IpLookupService({ cityProvider: city, asnProvider: provider('dbip-asn'), countryProviders: [userCountry] });
+  const [result] = service.lookupBatch(['2001:4860:4860::8888']).data;
+  assert.equal(result.country_code, 'US');
+  assert.equal(result.country_name, '美国');
+  assert.equal(result.city, null);
+  assert.ok(result.evidence.some((item) => item.field === 'location_conflict'));
+  assert.ok(result.source_claims.some((item) => item.source === 'dbip-city' && item.value === 'Montreal'));
+});

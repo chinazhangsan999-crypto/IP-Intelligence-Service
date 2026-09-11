@@ -49,6 +49,15 @@ function firstValue(records, field) {
   return null;
 }
 
+function countryNameFor(code) {
+  if (!code) return null;
+  try {
+    return new Intl.DisplayNames(['zh-CN'], { type: 'region' }).of(code) || null;
+  } catch {
+    return null;
+  }
+}
+
 function evidence(source, field, value, confidence) {
   return value === null || value === undefined || value === ''
     ? []
@@ -173,16 +182,24 @@ export class IpLookupService {
     }
     const countryRecords = [...countries, ...cities];
     result.country_code = firstValue(countryRecords, 'country_code');
-    result.country_name = firstValue(countryRecords, 'country_name');
+    result.country_name = countryNameFor(result.country_code)
+      || countryRecords.find((item) => item.fields.country_code === result.country_code)?.fields.country_name
+      || null;
     const selectedCity = cities.find((item) => item.record) || null;
-    result.state1 = selectedCity?.fields.state1 || null;
-    result.state2 = selectedCity?.fields.state2 || null;
+    const cityMatchesCountry = !selectedCity?.fields.country_code
+      || !result.country_code
+      || selectedCity.fields.country_code === result.country_code;
+    if (!cityMatchesCountry) {
+      result.evidence.push(...evidence(selectedCity.provider.id, 'location_conflict', `${selectedCity.fields.country_code} != ${result.country_code}`, 'low'));
+    }
+    result.state1 = cityMatchesCountry ? selectedCity?.fields.state1 || null : null;
+    result.state2 = cityMatchesCountry ? selectedCity?.fields.state2 || null : null;
     result.region = result.state1;
-    result.city = selectedCity?.fields.city || null;
-    result.postcode = selectedCity?.fields.postcode || null;
-    result.latitude = selectedCity?.fields.latitude || null;
-    result.longitude = selectedCity?.fields.longitude || null;
-    result.timezone = selectedCity?.fields.timezone || null;
+    result.city = cityMatchesCountry ? selectedCity?.fields.city || null : null;
+    result.postcode = cityMatchesCountry ? selectedCity?.fields.postcode || null : null;
+    result.latitude = cityMatchesCountry ? selectedCity?.fields.latitude || null : null;
+    result.longitude = cityMatchesCountry ? selectedCity?.fields.longitude || null : null;
+    result.timezone = cityMatchesCountry ? selectedCity?.fields.timezone || null : null;
     result.asn = firstValue(asns, 'asn');
     result.asn_org = firstValue(asns, 'asn_org');
 
