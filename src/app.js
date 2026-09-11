@@ -34,7 +34,16 @@ async function start() {
   const adminAssets = await loadAdminAssets(path.resolve(process.cwd(), 'public', 'admin'));
   const publicAssets = await loadPublicAssets(path.resolve(process.cwd(), 'public', 'site'));
   const publicRateLimiter = new ClientRateLimiter({ maxEntries: 50_000 });
-  const [cityProvider, asnProvider, cloudProvider, torProvider, proxyProvider, ruleService] = await Promise.all([
+  async function loadSupplementalProviders() {
+    return Promise.all(config.ipData.sapicsDatasets.map((dataset) => MmdbProvider.load({
+      id: dataset.id,
+      required: false,
+      filePath: dataset.filePath,
+      cacheSize: config.ipData.cacheSize,
+    })));
+  }
+
+  const [cityProvider, asnProvider, cloudProvider, torProvider, proxyProvider, ruleService, supplementalProviders] = await Promise.all([
     MmdbProvider.load({
       id: 'dbip-city',
       filePath: config.ipData.cityPath,
@@ -49,7 +58,13 @@ async function start() {
     TorExitProvider.load(config.ipData.torExitPath),
     Ip2ProxyProvider.load(config.ipData.ip2ProxyPath),
     ClassificationRuleService.load(config.ipData.classificationRulesPath),
+    loadSupplementalProviders(),
   ]);
+  const supplementalById = (providers) => new Map(providers.map((provider) => [provider.id, provider]));
+  const supplementalFor = (providers, ids) => {
+    const sources = supplementalById(providers);
+    return ids.map((id) => sources.get(id)).filter(Boolean);
+  };
   const intelligenceSources = [
     cityProvider,
     asnProvider,
@@ -57,6 +72,7 @@ async function start() {
     torProvider,
     proxyProvider,
     ruleService,
+    ...supplementalProviders,
   ];
   const readiness = createReadiness([
     { id: 'postgres', required: true, ready: false, message: 'Not configured' },
@@ -65,6 +81,22 @@ async function start() {
   const lookupService = new ReloadableLookupService(new IpLookupService({
     cityProvider,
     asnProvider,
+    countryProviders: supplementalFor(supplementalProviders, [
+      'sapics-user-country', 'sapics-server-country', 'sapics-geolite2-country',
+      'sapics-dbip-country', 'sapics-iptoasn-country',
+    ]),
+    cityFallbackProviders: supplementalFor(supplementalProviders, [
+      'sapics-dbip-city', 'sapics-geolite2-city',
+    ]),
+    asnProviders: [
+      ...supplementalFor(supplementalProviders, [
+        'sapics-origin-asn', 'sapics-iptoasn-asn',
+      ]),
+      asnProvider,
+      ...supplementalFor(supplementalProviders, [
+        'sapics-geolite2-asn', 'sapics-dbip-asn',
+      ]),
+    ],
     enricher: new IntelligenceEnricher({
       cloudProvider,
       torProvider,
@@ -77,6 +109,7 @@ async function start() {
   let activeCloudProvider = cloudProvider;
   let activeTorProvider = torProvider;
   let activeProxyProvider = proxyProvider;
+  let activeSupplementalProviders = supplementalProviders;
   const pool = createPostgresPool(config.database, logger);
   let authenticator = null;
   let managementRepository = null;
@@ -130,7 +163,7 @@ async function start() {
   }
 
   async function reloadFileSources(updateResults = {}) {
-    const [nextCity, nextAsn, nextCloud, nextTor, nextProxy] = await Promise.all([
+    const [nextCity, nextAsn, nextCloud, nextTor, nextProxy, nextSupplementalProviders] = await Promise.all([
       MmdbProvider.load({
         id: 'dbip-city',
         filePath: config.ipData.cityPath,
@@ -144,6 +177,7 @@ async function start() {
       CloudRangeProvider.load(config.ipData.cloudRangesPath),
       TorExitProvider.load(config.ipData.torExitPath),
       Ip2ProxyProvider.load(config.ipData.ip2ProxyPath),
+      loadSupplementalProviders(),
     ]);
     if (!nextCity.publicState().ready || !nextAsn.publicState().ready) {
       throw new Error('Updated required IP databases failed reload validation');
@@ -154,9 +188,30 @@ async function start() {
     if (nextTor.publicState().ready || !activeTorProvider.publicState().ready) activeTorProvider = nextTor;
     const previousProxyProvider = activeProxyProvider;
     if (nextProxy.publicState().ready || !activeProxyProvider.publicState().ready) activeProxyProvider = nextProxy;
+    activeSupplementalProviders = nextSupplementalProviders.map((provider, index) => (
+      provider.publicState().ready || !activeSupplementalProviders[index]?.publicState().ready
+        ? provider
+        : activeSupplementalProviders[index]
+    ));
     lookupService.swap(new IpLookupService({
       cityProvider: activeCityProvider,
       asnProvider: activeAsnProvider,
+      countryProviders: supplementalFor(activeSupplementalProviders, [
+        'sapics-user-country', 'sapics-server-country', 'sapics-geolite2-country',
+        'sapics-dbip-country', 'sapics-iptoasn-country',
+      ]),
+      cityFallbackProviders: supplementalFor(activeSupplementalProviders, [
+        'sapics-dbip-city', 'sapics-geolite2-city',
+      ]),
+      asnProviders: [
+        ...supplementalFor(activeSupplementalProviders, [
+          'sapics-origin-asn', 'sapics-iptoasn-asn',
+        ]),
+        activeAsnProvider,
+        ...supplementalFor(activeSupplementalProviders, [
+          'sapics-geolite2-asn', 'sapics-dbip-asn',
+        ]),
+      ],
       enricher: new IntelligenceEnricher({
         cloudProvider: activeCloudProvider,
         torProvider: activeTorProvider,
@@ -170,6 +225,7 @@ async function start() {
       activeCloudProvider.publicState(),
       activeTorProvider.publicState(),
       activeProxyProvider.publicState(),
+      ...activeSupplementalProviders.map((provider) => provider.publicState()),
     ];
     const dbipSources = updateResults.dbip?.result?.sources || [];
     const checksumById = {
@@ -178,6 +234,7 @@ async function start() {
       'cloud-ranges': updateResults.open?.result?.cloud_sha256 || null,
       'tor-exit': updateResults.open?.result?.tor_sha256 || null,
       'ip2proxy-lite': updateResults.ip2proxy?.result?.sha256 || null,
+      ...Object.fromEntries((updateResults.sapics?.result?.sources || []).map((source) => [source.id, source.sha256 || null])),
     };
     for (const activeState of states) {
       readiness.set(activeState.id, activeState);
@@ -208,6 +265,7 @@ async function start() {
     repository: managementRepository,
     reloadSources: reloadFileSources,
     ip2ProxyAutoUpdateEnabled: config.ipData.ip2ProxyAutoUpdateEnabled,
+    sapicsAutoUpdateEnabled: config.ipData.sapicsAutoUpdateEnabled,
     metrics,
   });
 

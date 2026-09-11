@@ -11,6 +11,8 @@ data/*.gz
 data/*.zip
 data/cloud-ranges.json
 data/ip2proxy-update-state.json
+data/sapics-update-state.json
+data/rollback/
 data/*.tmp-*
 data/*.backup-*
 data/.*.backup.mmdb

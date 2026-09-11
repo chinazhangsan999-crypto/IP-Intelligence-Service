@@ -9,6 +9,46 @@ function firstSubdivision(record) {
   return Array.isArray(record?.subdivisions) ? record.subdivisions[0] : null;
 }
 
+function secondSubdivision(record) {
+  return Array.isArray(record?.subdivisions) ? record.subdivisions[1] : null;
+}
+
+function countryCode(record) {
+  const value = record?.country?.iso_code || record?.country_code || record?.countryCode || record?.country;
+  return typeof value === 'string' && /^[A-Za-z]{2}$/.test(value) ? value.toUpperCase() : null;
+}
+
+function cityFields(record) {
+  const location = record?.location || {};
+  return {
+    country_code: countryCode(record),
+    country_name: localizedName(record?.country),
+    state1: localizedName(firstSubdivision(record)),
+    state2: localizedName(secondSubdivision(record)),
+    city: localizedName(record?.city),
+    postcode: record?.postal?.code || record?.postcode || null,
+    latitude: Number.isFinite(Number(location.latitude)) ? Number(location.latitude) : null,
+    longitude: Number.isFinite(Number(location.longitude)) ? Number(location.longitude) : null,
+    timezone: location.time_zone || location.timezone || record?.timezone || null,
+  };
+}
+
+function asnFields(record) {
+  const number = Number(record?.autonomous_system_number ?? record?.asn ?? record?.autonomousSystemNumber);
+  return {
+    asn: Number.isSafeInteger(number) && number >= 0 ? number : null,
+    asn_org: record?.autonomous_system_organization || record?.asn_org || record?.autonomousSystemOrganization || null,
+  };
+}
+
+function firstValue(records, field) {
+  for (const item of records) {
+    const value = item.fields[field];
+    if (value !== null && value !== undefined && value !== '') return value;
+  }
+  return null;
+}
+
 function evidence(source, field, value, confidence) {
   return value === null || value === undefined || value === ''
     ? []
@@ -27,6 +67,12 @@ function baseResult(parsed) {
     country_name: null,
     region: null,
     city: null,
+    state1: null,
+    state2: null,
+    postcode: null,
+    latitude: null,
+    longitude: null,
+    timezone: null,
     asn: null,
     asn_org: null,
     isp: null,
@@ -39,6 +85,7 @@ function baseResult(parsed) {
     is_anycast: null,
     confidence: 'unknown',
     evidence: [],
+    source_claims: [],
     sources: [],
   };
 }
@@ -72,17 +119,19 @@ function invalidResult(parsed) {
 }
 
 export class IpLookupService {
-  constructor({ cityProvider, asnProvider, enricher = null, now = () => new Date() }) {
-    this.cityProvider = cityProvider;
-    this.asnProvider = asnProvider;
+  constructor({ cityProvider, asnProvider, countryProviders = [], cityFallbackProviders = [], asnFallbackProviders = [], asnProviders = null, enricher = null, now = () => new Date() }) {
+    this.cityProviders = [cityProvider, ...cityFallbackProviders].filter(Boolean);
+    this.countryProviders = countryProviders.filter(Boolean);
+    this.asnProviders = (asnProviders || [asnProvider, ...asnFallbackProviders]).filter(Boolean);
     this.enricher = enricher;
     this.now = now;
   }
 
   databaseVersions() {
     const providers = [
-      this.cityProvider,
-      this.asnProvider,
+      ...this.countryProviders,
+      ...this.cityProviders,
+      ...this.asnProviders,
       ...(this.enricher?.providers() || []),
     ];
     return providers.reduce((versions, provider) => {
@@ -97,41 +146,44 @@ export class IpLookupService {
     const result = baseResult(parsed);
     if (parsed.scope !== 'public') return result;
 
-    const city = this.cityProvider.lookup(parsed.queryAddress);
-    const asn = this.asnProvider.lookup(parsed.queryAddress);
-    if (!city.available && !asn.available) {
+    const query = (provider, fields) => {
+      const response = provider.lookup(parsed.queryAddress);
+      if (!response.available) return { provider, available: false, record: null, fields: {} };
+      return { provider, available: true, record: response.record, fields: response.record ? fields(response.record) : {} };
+    };
+    const countries = this.countryProviders.map((provider) => query(provider, (record) => ({
+      country_code: countryCode(record), country_name: localizedName(record?.country),
+    })));
+    const cities = this.cityProviders.map((provider) => query(provider, cityFields));
+    const asns = this.asnProviders.map((provider) => query(provider, asnFields));
+    if (![...countries, ...cities, ...asns].some((item) => item.available)) {
       result.status = 'unavailable';
       result.message = 'IP data sources are unavailable';
       return result;
     }
 
-    if (city.available) {
-      result.sources.push(this.cityProvider.id);
-      if (city.record) {
-        result.country_code = city.record.country?.iso_code || null;
-        result.country_name = localizedName(city.record.country);
-        result.region = localizedName(firstSubdivision(city.record));
-        result.city = localizedName(city.record.city);
-        result.evidence.push(
-          ...evidence(this.cityProvider.id, 'country_code', result.country_code, 'medium'),
-          ...evidence(this.cityProvider.id, 'region', result.region, 'medium'),
-          ...evidence(this.cityProvider.id, 'city', result.city, 'medium'),
-        );
+    const claims = [...countries, ...cities, ...asns].filter((item) => item.available && item.record);
+    for (const item of [...countries, ...cities, ...asns].filter((item) => item.available)) result.sources.push(item.provider.id);
+    for (const item of claims) {
+      for (const [field, value] of Object.entries(item.fields)) {
+        if (value === null || value === undefined || value === '') continue;
+        result.source_claims.push({ source: item.provider.id, field, value });
+        result.evidence.push(...evidence(item.provider.id, field, value, item.provider.id.startsWith('sapics-') ? 'medium' : 'high'));
       }
     }
-
-    if (asn.available) {
-      result.sources.push(this.asnProvider.id);
-      if (asn.record) {
-        const number = Number(asn.record.autonomous_system_number);
-        result.asn = Number.isSafeInteger(number) && number >= 0 ? number : null;
-        result.asn_org = asn.record.autonomous_system_organization || null;
-        result.evidence.push(
-          ...evidence(this.asnProvider.id, 'asn', result.asn, 'high'),
-          ...evidence(this.asnProvider.id, 'asn_org', result.asn_org, 'high'),
-        );
-      }
-    }
+    const countryRecords = [...countries, ...cities];
+    result.country_code = firstValue(countryRecords, 'country_code');
+    result.country_name = firstValue(countryRecords, 'country_name');
+    result.state1 = firstValue(cities, 'state1');
+    result.state2 = firstValue(cities, 'state2');
+    result.region = result.state1;
+    result.city = firstValue(cities, 'city');
+    result.postcode = firstValue(cities, 'postcode');
+    result.latitude = firstValue(cities, 'latitude');
+    result.longitude = firstValue(cities, 'longitude');
+    result.timezone = firstValue(cities, 'timezone');
+    result.asn = firstValue(asns, 'asn');
+    result.asn_org = firstValue(asns, 'asn_org');
 
     let enrichment = null;
     if (this.enricher) {
@@ -153,7 +205,8 @@ export class IpLookupService {
       result.sources = [...new Set(result.sources)];
     }
 
-    const matchedSources = [city.record, asn.record].filter(Boolean).length;
+    result.sources = [...new Set(result.sources)];
+    const matchedSources = claims.length;
     const locationConfidence = matchedSources === 2 ? 'medium' : matchedSources === 1 ? 'low' : 'unknown';
     const levels = ['unknown', 'low', 'medium', 'high'];
     result.confidence = levels[Math.max(

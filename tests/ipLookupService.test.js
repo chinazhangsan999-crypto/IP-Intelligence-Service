@@ -82,3 +82,32 @@ test('returns per-item invalid and unavailable results without failing the batch
   assert.equal(result.meta.unavailable_count, 1);
   assert.equal(result.meta.unique_count, 2);
 });
+
+test('keeps every available source claim while choosing configured country and ASN priorities', () => {
+  const userCountry = provider('sapics-user-country', { '8.8.8.8': { country_code: 'US' } });
+  const city = provider('dbip-city', { '8.8.8.8': {
+    country: { iso_code: 'US', names: { en: 'United States' } },
+    subdivisions: [{ names: { en: 'California' } }, { names: { en: 'Santa Clara' } }],
+    city: { names: { en: 'Mountain View' } }, postal: { code: '94043' },
+    location: { latitude: 37.4056, longitude: -122.0775, time_zone: 'America/Los_Angeles' },
+  } });
+  const originAsn = provider('sapics-origin-asn', { '8.8.8.8': { autonomous_system_number: 15169, autonomous_system_organization: 'Google LLC' } });
+  const fallbackAsn = provider('dbip-asn', { '8.8.8.8': { autonomous_system_number: 64512, autonomous_system_organization: 'Fallback' } });
+  const service = new IpLookupService({
+    cityProvider: city,
+    asnProvider: fallbackAsn,
+    countryProviders: [userCountry],
+    asnProviders: [originAsn, fallbackAsn],
+  });
+
+  const [result] = service.lookupBatch(['8.8.8.8']).data;
+  assert.equal(result.country_code, 'US');
+  assert.equal(result.state1, 'California');
+  assert.equal(result.state2, 'Santa Clara');
+  assert.equal(result.postcode, '94043');
+  assert.equal(result.latitude, 37.4056);
+  assert.equal(result.timezone, 'America/Los_Angeles');
+  assert.equal(result.asn, 15169);
+  assert.ok(result.source_claims.some((claim) => claim.source === 'sapics-user-country' && claim.field === 'country_code'));
+  assert.ok(result.source_claims.some((claim) => claim.source === 'dbip-asn' && claim.field === 'asn'));
+});

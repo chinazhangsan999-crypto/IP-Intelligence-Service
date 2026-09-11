@@ -56,6 +56,8 @@ IP_DATA_UPDATE_INTERVAL_HOURS=6
 IP_DATA_UPDATE_STARTUP_DELAY_SECONDS=60
 IP2PROXY_AUTO_UPDATE_ENABLED=0
 IP2PROXY_UPDATE_INTERVAL_DAYS=7
+SAPICS_AUTO_UPDATE_ENABLED=1
+SAPICS_UPDATE_HOUR_BJT=8
 DATABASE_URL=postgresql://$DATABASE_USER:$database_password@127.0.0.1:5432/$DATABASE_NAME
 DATABASE_SSL_MODE=disable
 DATABASE_POOL_MAX=10
@@ -69,6 +71,10 @@ EOF
   chmod 600 "$ENV_FILE"
 fi
 
+if ! grep -q '^SAPICS_AUTO_UPDATE_ENABLED=' "$ENV_FILE"; then
+  printf '\nSAPICS_AUTO_UPDATE_ENABLED=1\nSAPICS_UPDATE_HOUR_BJT=8\n' >> "$ENV_FILE"
+fi
+
 mkdir -p "$APP_DIR/data"
 chmod 750 "$APP_DIR/data"
 cd "$APP_DIR"
@@ -76,6 +82,7 @@ npm ci --omit=dev
 npm run db:migrate
 npm run data:update-dbip
 npm run data:update-open
+npm run data:update-sapics
 
 if pm2 describe ip-intelligence >/dev/null 2>&1; then
   pm2 restart ip-intelligence --update-env

@@ -66,6 +66,17 @@ test('IP2Proxy updater runs only when its own automatic update setting is enable
   assert.equal(calls.at(-1).endsWith('update-ip2proxy-data.js'), true);
 });
 
+test('SAPICS updater runs only when daily catalogue updates are enabled', async () => {
+  const calls = [];
+  const instance = scheduler({
+    sapicsAutoUpdateEnabled: true,
+    execute: async (scriptPath) => { calls.push(scriptPath); return { status: 'updated', updated: true }; },
+  });
+
+  await instance.runCycle();
+  assert.equal(calls.some((path) => path.endsWith('update-sapics-data.js')), true);
+});
+
 test('overlapping update cycles are rejected', async () => {
   let release;
   const waiting = new Promise((resolve) => { release = resolve; });

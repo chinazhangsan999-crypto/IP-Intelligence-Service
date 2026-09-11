@@ -11,6 +11,7 @@
     "data:update-open": "node --env-file=.env scripts/update-open-data.js",
     "data:update-dbip": "node --env-file=.env scripts/update-dbip-data.js",
     "data:update-ip2proxy": "node --env-file=.env scripts/update-ip2proxy-data.js",
+    "data:update-sapics": "node --env-file=.env scripts/update-sapics-data.js",
     "data:update-all": "node --env-file=.env scripts/update-dbip-data.js && node --env-file=.env scripts/update-open-data.js && node --env-file=.env scripts/update-ip2proxy-data.js",
     "db:migrate": "node --env-file=.env src/database/migrate.js",
     "client:admin": "node --env-file=.env src/database/clientAdmin.js",

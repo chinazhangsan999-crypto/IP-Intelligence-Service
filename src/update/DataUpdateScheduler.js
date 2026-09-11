@@ -30,6 +30,7 @@ export class DataUpdateScheduler {
     clearTimer = clearTimeout,
     metrics = null,
     ip2ProxyAutoUpdateEnabled = false,
+    sapicsAutoUpdateEnabled = false,
   }) {
     this.enabled = enabled;
     this.intervalMs = intervalMs;
@@ -43,6 +44,7 @@ export class DataUpdateScheduler {
     this.clearTimer = clearTimer;
     this.metrics = metrics;
     this.ip2ProxyAutoUpdateEnabled = ip2ProxyAutoUpdateEnabled;
+    this.sapicsAutoUpdateEnabled = sapicsAutoUpdateEnabled;
     this.timer = null;
     this.running = false;
     this.stopped = false;
@@ -121,11 +123,16 @@ export class DataUpdateScheduler {
       if (this.ip2ProxyAutoUpdateEnabled) {
         operations.push(['ip2proxy', path.join(this.cwd, 'scripts', 'update-ip2proxy-data.js')]);
       }
+      if (this.sapicsAutoUpdateEnabled) {
+        operations.push(['sapics', path.join(this.cwd, 'scripts', 'update-sapics-data.js')]);
+      }
       for (const [name, scriptPath] of operations) {
         try {
+          const result = await this.execute(scriptPath, this.cwd, this.abortController.signal);
+          if (result?.status === 'failed') throw new Error(`${name} data update did not install any valid source`);
           results[name] = {
             status: 'succeeded',
-            result: await this.execute(scriptPath, this.cwd, this.abortController.signal),
+            result,
           };
         } catch (error) {
           results[name] = { status: 'failed', error: String(error.message || error).slice(0, 2_000) };

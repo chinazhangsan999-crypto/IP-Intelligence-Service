@@ -1,4 +1,5 @@
 import path from 'node:path';
+import { SAPICS_DATASETS } from './data/sapicsCatalog.js';
 
 const VALID_NODE_ENVS = new Set(['development', 'test', 'production']);
 const VALID_LOG_LEVELS = new Set(['debug', 'info', 'warn', 'error']);
@@ -93,6 +94,10 @@ export function loadConfig(env = process.env, cwd = process.cwd()) {
       cloudRangesPath: path.resolve(dataDir, env.CLOUD_RANGES_FILE || 'cloud-ranges.json'),
       torExitPath: path.resolve(dataDir, env.TOR_EXIT_LIST_FILE || 'tor-exit-nodes.txt'),
       ip2ProxyPath: path.resolve(dataDir, env.IP2PROXY_BIN_FILE || 'IP2PROXY-LITE.BIN'),
+      sapicsDatasets: SAPICS_DATASETS.map((dataset) => ({
+        ...dataset,
+        filePath: path.resolve(dataDir, env[`SAPICS_${dataset.id.replace('sapics-', '').replaceAll('-', '_').toUpperCase()}_MMDB_FILE`] || dataset.fileName),
+      })),
       classificationRulesPath: path.resolve(
         configDir,
         env.ASN_CLASSIFICATION_FILE || 'asn-classification.json',
@@ -111,6 +116,8 @@ export function loadConfig(env = process.env, cwd = process.cwd()) {
         max: 3_600,
       }) * 1_000,
       ip2ProxyAutoUpdateEnabled,
+      sapicsAutoUpdateEnabled: readBoolean(env, 'SAPICS_AUTO_UPDATE_ENABLED', false),
+      sapicsUpdateHourBjt: readInteger(env, 'SAPICS_UPDATE_HOUR_BJT', 8, { min: 0, max: 23 }),
       ip2ProxyDownloadToken,
       ip2ProxyDownloadCode,
       ip2ProxyUpdateIntervalMs: readInteger(env, 'IP2PROXY_UPDATE_INTERVAL_DAYS', 7, {

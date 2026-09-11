@@ -93,6 +93,10 @@ X-Signature: <64位小写十六进制HMAC-SHA256>
 - `invalid`：输入不是支持的 IP 或 IPv6 `/64`。
 - `unavailable`：输入合法，但本次查询因内部数据源不可用而未完成。
 
+## 多来源地理字段
+
+查询结果除 `country_code`、`region`、`city`、`asn` 外，还可能包含 `state1`、`state2`、`postcode`、`latitude`、`longitude` 与 `timezone`。`source_claims` 保留每个可用数据库提供的原始字段证据；最终顶层字段按配置优先级选择，冲突不会被伪装成确定结果。
+
 每批必须满足：`unique_count = resolved_count + invalid_count + unavailable_count`。
 
 成功响应同时返回限速头：

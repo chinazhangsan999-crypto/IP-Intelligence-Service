@@ -25,6 +25,7 @@ IP_DATA_UPDATE_STARTUP_DELAY_SECONDS=60
 | AWS/GCP/Cloudflare 网段 | 每轮检查 | 下载官方当前列表并重新生成统一文件 |
 | Tor 出口节点 | 每轮检查 | 主列表失败后尝试 Onionoo；两者都失败时保留旧文件 |
 | IP2Proxy Lite | 每轮调度时判断是否到期 | 启用后每 7 天使用服务器下载令牌检查并替换 LITE BIN；下载令牌永不写入数据库、日志或 Git |
+| SAPICS 全数据集 | 每日北京时间 08:00 后 | 下载参考镜像说明所列的正式 MMDB 发布资产；全部数据集成功后当日不再下载，部分失败会在下一调度轮次重试 |
 | 自定义分类规则 | 不覆盖 | 本地和 PostgreSQL 管理规则属于人工配置 |
 
 ## 安全替换流程
@@ -76,6 +77,12 @@ npm run data:update-all
 ```
 
 `data:update-dbip` 在本月版本已经存在时只返回 `current`，不会重复下载百兆数据库。手动运行脚本只替换文件；已经运行的服务要立即使用新文件，应等待下一次自动热重载，或重启服务。
+
+```powershell
+npm run data:update-sapics
+```
+
+该更新器只下载白名单内的 Country、City、ASN MMDB；它不克隆参考仓库，也不会把 CSV、CIDR 和其他重复格式写入生产磁盘。每个文件必须通过正式 SHA-256、MMDB 打开与 IPv4/IPv6 样本校验，安装时保留一个回滚版本。`user-country`、`server-country`、`origin-asn` 和 IPtoASN 使用 PDDL；DB-IP 与 GeoLite2 的署名和许可义务仍须保留。
 
 IP2Proxy 自动下载默认关闭。启用时需要在服务器私有 `.env` 设置 `IP2PROXY_AUTO_UPDATE_ENABLED=1`、下载令牌、数据库代码 `PX12LITEBIN` 和更新间隔；当前调度会调用更新器，但更新器会根据本地成功检查时间确保每 7 天最多下载一次。下载文件需通过 ZIP 条目、大小、BIN 打开、版本与 SHA-256 校验，失败时保留当前版本。
 
