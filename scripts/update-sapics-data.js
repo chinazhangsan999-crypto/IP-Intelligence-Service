@@ -116,7 +116,8 @@ function validRecord(dataset, record) {
 
 async function validate(dataset, filePath) {
   const reader = await maxmind.open(filePath);
-  const record = reader.get('8.8.8.8') || reader.get('1.1.1.1');
+  const sampleIp = dataset.fileName.includes('ipv6') ? '2001:4860:4860::8888' : '8.8.8.8';
+  const record = reader.get(sampleIp) || reader.get(dataset.fileName.includes('ipv6') ? '2606:4700:4700::1111' : '1.1.1.1');
   if (!validRecord(dataset, record)) throw new Error(`MMDB validation failed for ${dataset.id}`);
   return reader.metadata?.buildEpoch instanceof Date ? reader.metadata.buildEpoch.toISOString() : null;
 }

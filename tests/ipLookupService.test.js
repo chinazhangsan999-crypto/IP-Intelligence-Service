@@ -111,3 +111,19 @@ test('keeps every available source claim while choosing configured country and A
   assert.ok(result.source_claims.some((claim) => claim.source === 'sapics-user-country' && claim.field === 'country_code'));
   assert.ok(result.source_claims.some((claim) => claim.source === 'dbip-asn' && claim.field === 'asn'));
 });
+
+test('does not combine city fields from different providers into one location', () => {
+  const primaryCity = provider('dbip-city', { '8.8.8.8': {
+    country: { iso_code: 'US' }, city: { names: { en: 'Mountain View' } },
+    location: { latitude: 37.4, longitude: -122.0 },
+  } });
+  const fallbackCity = provider('sapics-geolite2-city-ipv4', { '8.8.8.8': {
+    country: { iso_code: 'US' }, city: { names: { en: 'Elsewhere' } },
+    location: { latitude: 1, longitude: 2, time_zone: 'Elsewhere/Time' },
+  } });
+  const service = new IpLookupService({ cityProvider: primaryCity, asnProvider: provider('dbip-asn'), cityFallbackProviders: [fallbackCity] });
+  const [result] = service.lookupBatch(['8.8.8.8']).data;
+  assert.equal(result.city, 'Mountain View');
+  assert.equal(result.timezone, null);
+  assert.ok(result.source_claims.some((claim) => claim.value === 'Elsewhere/Time'));
+});

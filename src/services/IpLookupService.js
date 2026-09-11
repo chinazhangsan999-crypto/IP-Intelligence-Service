@@ -174,14 +174,15 @@ export class IpLookupService {
     const countryRecords = [...countries, ...cities];
     result.country_code = firstValue(countryRecords, 'country_code');
     result.country_name = firstValue(countryRecords, 'country_name');
-    result.state1 = firstValue(cities, 'state1');
-    result.state2 = firstValue(cities, 'state2');
+    const selectedCity = cities.find((item) => item.record) || null;
+    result.state1 = selectedCity?.fields.state1 || null;
+    result.state2 = selectedCity?.fields.state2 || null;
     result.region = result.state1;
-    result.city = firstValue(cities, 'city');
-    result.postcode = firstValue(cities, 'postcode');
-    result.latitude = firstValue(cities, 'latitude');
-    result.longitude = firstValue(cities, 'longitude');
-    result.timezone = firstValue(cities, 'timezone');
+    result.city = selectedCity?.fields.city || null;
+    result.postcode = selectedCity?.fields.postcode || null;
+    result.latitude = selectedCity?.fields.latitude || null;
+    result.longitude = selectedCity?.fields.longitude || null;
+    result.timezone = selectedCity?.fields.timezone || null;
     result.asn = firstValue(asns, 'asn');
     result.asn_org = firstValue(asns, 'asn_org');
 
