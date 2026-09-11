@@ -16,6 +16,17 @@ docker-compose --env-file .env.production up -d --build
 
 生产密钥由 `bootstrap.sh` 首次运行时在服务器本地生成。重复部署会保留原密钥，不会导致已有客户端凭证失效。
 
+如需启用 IP2Proxy LITE 自动更新，只在服务器的 `deploy/.env.production` 中填写下载令牌：
+
+```env
+IP2PROXY_AUTO_UPDATE_ENABLED=1
+IP2PROXY_DOWNLOAD_TOKEN=<download token>
+IP2PROXY_DOWNLOAD_CODE=PX12LITEBIN
+IP2PROXY_UPDATE_INTERVAL_DAYS=7
+```
+
+该文件权限为仅部署用户可读，不能提交到 Git；没有配置时，IP2Proxy 自动更新保持关闭。
+
 ## 域名和 HTTPS
 
 首次部署在没有域名时使用 `:80`。域名解析到固定公网 IP 后，将 Caddyfile 第一行替换为实际域名并重启 Caddy，Caddy 会自动申请和续期证书。

@@ -54,6 +54,18 @@ test('one failed source does not prevent a successful source from being hot relo
   assert.equal(result.details.results.open.status, 'succeeded');
 });
 
+test('IP2Proxy updater runs only when its own automatic update setting is enabled', async () => {
+  const calls = [];
+  const instance = scheduler({
+    ip2ProxyAutoUpdateEnabled: true,
+    execute: async (scriptPath) => { calls.push(scriptPath); return { updated: false }; },
+  });
+
+  await instance.runCycle();
+  assert.equal(calls.length, 3);
+  assert.equal(calls.at(-1).endsWith('update-ip2proxy-data.js'), true);
+});
+
 test('overlapping update cycles are rejected', async () => {
   let release;
   const waiting = new Promise((resolve) => { release = resolve; });

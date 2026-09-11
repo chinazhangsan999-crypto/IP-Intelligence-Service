@@ -8,7 +8,7 @@
 |---|---|---|---|
 | AWS、Google Cloud、Cloudflare 官方网段 | `data/cloud-ranges.json` | `hosting`、`cdn`、云厂商证据 | 可选 |
 | Tor Exit List / Onionoo | `data/tor-exit-nodes.txt` | `is_tor`、`is_proxy` | 可选 |
-| IP2Proxy Lite | `data/IP2PROXY-LITE.BIN` | 代理、VPN、用途类型和 ISP | 可选，需自行取得 BIN |
+| IP2Proxy Lite | `data/IP2PROXY-LITE.BIN` | 代理、VPN、用途类型和 ISP | 可选，需从 IP2Location LITE 控制台自行下载 BIN |
 | 本地与 PostgreSQL 分类规则 | `config/asn-classification.json` | 按 ASN、ASN 组织名或 CIDR 覆盖分类 | 可选 |
 
 City 和 ASN 数据仍是查询接口的必需数据源。上述任一增强数据不存在或不可用时，服务继续运行，相应字段保持 `null` 或 `unknown`，并在数据源状态中报告 `unavailable`。
@@ -24,6 +24,12 @@ npm run data:update-open
 生产环境可以启用内置更新调度和热重载，配置及故障边界见 [数据自动更新](data-updates.md)。
 
 Tor 是可选源。如果当前网络无法连接两个 Tor 官方地址，云厂商网段仍会更新，已有 Tor 文件会原样保留；没有旧文件时 `is_tor` 保持 `null`。
+
+## IP2Proxy Lite 安装
+
+IP2Proxy LITE 的注册与下载已迁移到 [IP2Location LITE 数据库](https://www.ip2location.com/database/lite)。使用一个免费账户即可取得 IP2Location、IP2Proxy 与 ASN 的 LITE 数据；本项目只需要其中的 IP2Proxy LITE BIN 文件。
+
+下载后将 BIN 文件命名为 `IP2PROXY-LITE.BIN` 并放入 `data/`，再重启服务。文件有效时，数据源状态会从“不可用”变为“就绪”。也可在服务器私有 `.env` 启用自动下载：系统只使用下载令牌，不保存登录账号或在线查询 API Key；新文件通过校验后才替换当前 BIN。
 
 生成的数据文件不提交 Git。部署时应在目标服务器执行更新命令，并按数据源许可要求保留相应署名。
 

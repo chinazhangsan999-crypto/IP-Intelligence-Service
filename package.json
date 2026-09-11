@@ -5,15 +5,16 @@
   "description": "Centralized IP intelligence service for navigation sites.",
   "type": "module",
   "scripts": {
-    "start": "node src/app.js",
-    "dev": "node --watch src/app.js",
+    "start": "node --env-file=.env src/app.js",
+    "dev": "node --env-file=.env --watch src/app.js",
     "test": "node --test",
-    "data:update-open": "node scripts/update-open-data.js",
-    "data:update-dbip": "node scripts/update-dbip-data.js",
-    "data:update-all": "node scripts/update-dbip-data.js && node scripts/update-open-data.js",
-    "db:migrate": "node src/database/migrate.js",
-    "client:admin": "node src/database/clientAdmin.js",
-    "admin:account": "node src/database/adminAccount.js"
+    "data:update-open": "node --env-file=.env scripts/update-open-data.js",
+    "data:update-dbip": "node --env-file=.env scripts/update-dbip-data.js",
+    "data:update-ip2proxy": "node --env-file=.env scripts/update-ip2proxy-data.js",
+    "data:update-all": "node --env-file=.env scripts/update-dbip-data.js && node --env-file=.env scripts/update-open-data.js && node --env-file=.env scripts/update-ip2proxy-data.js",
+    "db:migrate": "node --env-file=.env src/database/migrate.js",
+    "client:admin": "node --env-file=.env src/database/clientAdmin.js",
+    "admin:account": "node --env-file=.env src/database/adminAccount.js"
   },
   "engines": {
     "node": ">=20"
@@ -22,6 +23,7 @@
     "ip2proxy-nodejs": "^4.5.0",
     "ipaddr.js": "^2.5.0",
     "maxmind": "^5.0.7",
-    "pg": "^8.23.0"
+    "pg": "^8.23.0",
+    "yauzl": "^2.10.0"
   }
 }

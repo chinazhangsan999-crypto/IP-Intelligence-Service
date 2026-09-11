@@ -76,6 +76,7 @@ async function start() {
   let activeAsnProvider = asnProvider;
   let activeCloudProvider = cloudProvider;
   let activeTorProvider = torProvider;
+  let activeProxyProvider = proxyProvider;
   const pool = createPostgresPool(config.database, logger);
   let authenticator = null;
   let managementRepository = null;
@@ -129,7 +130,7 @@ async function start() {
   }
 
   async function reloadFileSources(updateResults = {}) {
-    const [nextCity, nextAsn, nextCloud, nextTor] = await Promise.all([
+    const [nextCity, nextAsn, nextCloud, nextTor, nextProxy] = await Promise.all([
       MmdbProvider.load({
         id: 'dbip-city',
         filePath: config.ipData.cityPath,
@@ -142,6 +143,7 @@ async function start() {
       }),
       CloudRangeProvider.load(config.ipData.cloudRangesPath),
       TorExitProvider.load(config.ipData.torExitPath),
+      Ip2ProxyProvider.load(config.ipData.ip2ProxyPath),
     ]);
     if (!nextCity.publicState().ready || !nextAsn.publicState().ready) {
       throw new Error('Updated required IP databases failed reload validation');
@@ -150,13 +152,15 @@ async function start() {
     activeAsnProvider = nextAsn;
     if (nextCloud.publicState().ready || !activeCloudProvider.publicState().ready) activeCloudProvider = nextCloud;
     if (nextTor.publicState().ready || !activeTorProvider.publicState().ready) activeTorProvider = nextTor;
+    const previousProxyProvider = activeProxyProvider;
+    if (nextProxy.publicState().ready || !activeProxyProvider.publicState().ready) activeProxyProvider = nextProxy;
     lookupService.swap(new IpLookupService({
       cityProvider: activeCityProvider,
       asnProvider: activeAsnProvider,
       enricher: new IntelligenceEnricher({
         cloudProvider: activeCloudProvider,
         torProvider: activeTorProvider,
-        proxyProvider,
+        proxyProvider: activeProxyProvider,
         ruleService,
       }),
     }));
@@ -165,6 +169,7 @@ async function start() {
       activeAsnProvider.publicState(),
       activeCloudProvider.publicState(),
       activeTorProvider.publicState(),
+      activeProxyProvider.publicState(),
     ];
     const dbipSources = updateResults.dbip?.result?.sources || [];
     const checksumById = {
@@ -172,6 +177,7 @@ async function start() {
       'dbip-asn': dbipSources.find((source) => source.kind === 'asn')?.sha256 || null,
       'cloud-ranges': updateResults.open?.result?.cloud_sha256 || null,
       'tor-exit': updateResults.open?.result?.tor_sha256 || null,
+      'ip2proxy-lite': updateResults.ip2proxy?.result?.sha256 || null,
     };
     for (const activeState of states) {
       readiness.set(activeState.id, activeState);
@@ -189,6 +195,7 @@ async function start() {
         });
       }
     }
+    if (previousProxyProvider !== activeProxyProvider) previousProxyProvider.close();
     return states.map((state) => ({ id: state.id, status: state.status, version: state.version }));
   }
 
@@ -200,6 +207,7 @@ async function start() {
     logger,
     repository: managementRepository,
     reloadSources: reloadFileSources,
+    ip2ProxyAutoUpdateEnabled: config.ipData.ip2ProxyAutoUpdateEnabled,
     metrics,
   });
 
@@ -255,7 +263,7 @@ async function start() {
     timeoutMs: config.shutdownTimeoutMs,
     cleanup: async () => {
       await dataUpdateScheduler.stop();
-      proxyProvider.close();
+      activeProxyProvider.close();
       if (pool) await pool.end();
     },
   });

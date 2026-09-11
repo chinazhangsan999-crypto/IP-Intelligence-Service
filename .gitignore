@@ -4,10 +4,13 @@ node_modules/
 !.env.example
 data/*.mmdb
 data/*.bin
+data/*.BIN
 data/*.txt
 data/*.csv
 data/*.gz
+data/*.zip
 data/cloud-ranges.json
+data/ip2proxy-update-state.json
 data/*.tmp-*
 data/*.backup-*
 data/.*.backup.mmdb

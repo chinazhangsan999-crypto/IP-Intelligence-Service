@@ -68,6 +68,13 @@ export function loadConfig(env = process.env, cwd = process.cwd()) {
     throw new Error('METRICS_TOKEN must contain at least 32 characters when metrics are enabled');
   }
 
+  const ip2ProxyAutoUpdateEnabled = readBoolean(env, 'IP2PROXY_AUTO_UPDATE_ENABLED', false);
+  const ip2ProxyDownloadToken = String(env.IP2PROXY_DOWNLOAD_TOKEN || '').trim();
+  const ip2ProxyDownloadCode = String(env.IP2PROXY_DOWNLOAD_CODE || '').trim();
+  if (ip2ProxyAutoUpdateEnabled && (!ip2ProxyDownloadToken || !/^[A-Za-z0-9_-]+$/.test(ip2ProxyDownloadCode))) {
+    throw new Error('IP2Proxy automatic updates require a download token and a safe download code');
+  }
+
   return Object.freeze({
     serviceName: 'ip-intelligence-service',
     nodeEnv,
@@ -103,6 +110,13 @@ export function loadConfig(env = process.env, cwd = process.cwd()) {
         min: 5,
         max: 3_600,
       }) * 1_000,
+      ip2ProxyAutoUpdateEnabled,
+      ip2ProxyDownloadToken,
+      ip2ProxyDownloadCode,
+      ip2ProxyUpdateIntervalMs: readInteger(env, 'IP2PROXY_UPDATE_INTERVAL_DAYS', 7, {
+        min: 1,
+        max: 31,
+      }) * 24 * 60 * 60 * 1_000,
     }),
     database: Object.freeze({
       enabled: Boolean(databaseUrl),

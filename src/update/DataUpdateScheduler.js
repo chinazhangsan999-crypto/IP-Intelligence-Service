@@ -29,6 +29,7 @@ export class DataUpdateScheduler {
     setTimer = setTimeout,
     clearTimer = clearTimeout,
     metrics = null,
+    ip2ProxyAutoUpdateEnabled = false,
   }) {
     this.enabled = enabled;
     this.intervalMs = intervalMs;
@@ -41,6 +42,7 @@ export class DataUpdateScheduler {
     this.setTimer = setTimer;
     this.clearTimer = clearTimer;
     this.metrics = metrics;
+    this.ip2ProxyAutoUpdateEnabled = ip2ProxyAutoUpdateEnabled;
     this.timer = null;
     this.running = false;
     this.stopped = false;
@@ -116,6 +118,9 @@ export class DataUpdateScheduler {
         ['dbip', path.join(this.cwd, 'scripts', 'update-dbip-data.js')],
         ['open', path.join(this.cwd, 'scripts', 'update-open-data.js')],
       ];
+      if (this.ip2ProxyAutoUpdateEnabled) {
+        operations.push(['ip2proxy', path.join(this.cwd, 'scripts', 'update-ip2proxy-data.js')]);
+      }
       for (const [name, scriptPath] of operations) {
         try {
           results[name] = {

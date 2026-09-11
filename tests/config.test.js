@@ -26,6 +26,10 @@ test('loadConfig applies safe local defaults', () => {
   assert.equal(config.ipData.autoUpdateEnabled, false);
   assert.equal(config.ipData.updateIntervalMs, 6 * 60 * 60 * 1_000);
   assert.equal(config.ipData.updateStartupDelayMs, 60_000);
+  assert.equal(config.ipData.ip2ProxyAutoUpdateEnabled, false);
+  assert.equal(config.ipData.ip2ProxyDownloadToken, '');
+  assert.equal(config.ipData.ip2ProxyDownloadCode, '');
+  assert.equal(config.ipData.ip2ProxyUpdateIntervalMs, 7 * 24 * 60 * 60 * 1_000);
   assert.equal(config.http.headersTimeoutMs, 10_000);
   assert.equal(config.http.keepAliveTimeoutMs, 5_000);
   assert.equal(config.observability.metricsEnabled, false);
@@ -46,6 +50,10 @@ test('loadConfig validates numeric and enumerated settings', () => {
   assert.throws(() => loadConfig({ LOG_LEVEL: 'verbose' }), /LOG_LEVEL must be one of/);
   assert.throws(() => loadConfig({ HOST: 'bad host' }), /HOST must be/);
   assert.throws(() => loadConfig({ IP_DATA_AUTO_UPDATE_ENABLED: 'yes' }), /must be one of/);
+  assert.throws(
+    () => loadConfig({ IP2PROXY_AUTO_UPDATE_ENABLED: '1' }),
+    /IP2Proxy automatic updates require/,
+  );
   assert.throws(() => loadConfig({ METRICS_ENABLED: 'true' }), /METRICS_TOKEN must contain/);
   assert.throws(() => loadConfig({ PUBLIC_LOOKUP_RATE_LIMIT_PER_MINUTE: '0' }), /must be an integer/);
   assert.throws(() => loadConfig({ NODE_ENV: 'production' }), /DATABASE_URL is required/);
@@ -91,6 +99,19 @@ test('loadConfig accepts explicit automatic update settings', () => {
   assert.equal(config.ipData.autoUpdateEnabled, true);
   assert.equal(config.ipData.updateIntervalMs, 12 * 60 * 60 * 1_000);
   assert.equal(config.ipData.updateStartupDelayMs, 30_000);
+});
+
+test('loadConfig accepts IP2Proxy automatic update credentials without exposing them elsewhere', () => {
+  const config = loadConfig({
+    IP2PROXY_AUTO_UPDATE_ENABLED: '1',
+    IP2PROXY_DOWNLOAD_TOKEN: 'private-download-token',
+    IP2PROXY_DOWNLOAD_CODE: 'PX12LITEBIN',
+    IP2PROXY_UPDATE_INTERVAL_DAYS: '14',
+  });
+  assert.equal(config.ipData.ip2ProxyAutoUpdateEnabled, true);
+  assert.equal(config.ipData.ip2ProxyDownloadToken, 'private-download-token');
+  assert.equal(config.ipData.ip2ProxyDownloadCode, 'PX12LITEBIN');
+  assert.equal(config.ipData.ip2ProxyUpdateIntervalMs, 14 * 24 * 60 * 60 * 1_000);
 });
 
 test('loadConfig exposes PostgreSQL pool settings without leaking them elsewhere', () => {
