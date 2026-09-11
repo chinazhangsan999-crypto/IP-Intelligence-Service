@@ -82,7 +82,7 @@ npm run data:update-all
 npm run data:update-sapics
 ```
 
-该更新器只下载白名单内的 Country、City、ASN MMDB；City 数据按上游发布方式分别保存 IPv4 与 IPv6 文件，它不克隆参考仓库，也不会把 CSV、CIDR 和其他重复格式写入生产磁盘。每个文件必须通过正式 SHA-256、MMDB 打开与 IPv4/IPv6 样本校验，安装时保留一个回滚版本。`user-country`、`server-country`、`origin-asn` 和 IPtoASN 使用 PDDL；DB-IP 与 GeoLite2 的署名和许可义务仍须保留。
+该更新器只下载白名单内的 Country、City、ASN MMDB；GeoLite2 City 按上游发布方式分别保存 IPv4 与 IPv6 文件。DB-IP City 已由现有官方 DB-IP 更新器维护，不重复下载镜像副本。它不克隆参考仓库，也不会把 CSV、CIDR 和其他重复格式写入生产磁盘。每个文件必须通过正式 SHA-256、MMDB 打开与 IPv4/IPv6 样本校验，安装时保留一个回滚版本。`user-country`、`server-country`、`origin-asn` 和 IPtoASN 使用 PDDL；DB-IP 与 GeoLite2 的署名和许可义务仍须保留。
 
 IP2Proxy 自动下载默认关闭。启用时需要在服务器私有 `.env` 设置 `IP2PROXY_AUTO_UPDATE_ENABLED=1`、下载令牌、数据库代码 `PX12LITEBIN` 和更新间隔；当前调度会调用更新器，但更新器会根据本地成功检查时间确保每 7 天最多下载一次。下载文件需通过 ZIP 条目、大小、BIN 打开、版本与 SHA-256 校验，失败时保留当前版本。
 

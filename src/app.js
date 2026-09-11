@@ -86,7 +86,6 @@ async function start() {
       'sapics-dbip-country', 'sapics-iptoasn-country',
     ]),
     cityFallbackProviders: supplementalFor(supplementalProviders, [
-      'sapics-dbip-city-ipv4', 'sapics-dbip-city-ipv6',
       'sapics-geolite2-city-ipv4', 'sapics-geolite2-city-ipv6',
     ]),
     asnProviders: [
@@ -202,7 +201,6 @@ async function start() {
         'sapics-dbip-country', 'sapics-iptoasn-country',
       ]),
       cityFallbackProviders: supplementalFor(activeSupplementalProviders, [
-        'sapics-dbip-city-ipv4', 'sapics-dbip-city-ipv6',
         'sapics-geolite2-city-ipv4', 'sapics-geolite2-city-ipv6',
       ]),
       asnProviders: [

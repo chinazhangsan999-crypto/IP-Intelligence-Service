@@ -10,8 +10,8 @@ export const SAPICS_DATASETS = Object.freeze([
   { id: 'sapics-geolite2-country', fileName: 'geolite2-country.mmdb', kind: 'country', priority: 50, license: 'GeoLite2' },
   { id: 'sapics-dbip-country', fileName: 'dbip-country.mmdb', kind: 'country', priority: 60, license: 'CC-BY-4.0' },
   { id: 'sapics-iptoasn-country', fileName: 'iptoasn-country.mmdb', kind: 'country', priority: 70, license: 'PDDL-1.0' },
-  { id: 'sapics-dbip-city-ipv4', fileName: 'dbip-city-ipv4.mmdb', kind: 'city', priority: 30, license: 'CC-BY-4.0' },
-  { id: 'sapics-dbip-city-ipv6', fileName: 'dbip-city-ipv6.mmdb', kind: 'city', priority: 31, license: 'CC-BY-4.0' },
+  // DB-IP City is already updated by the service's official DB-IP updater,
+  // including IPv4 and IPv6. Do not download a duplicate mirror copy.
   { id: 'sapics-geolite2-city-ipv4', fileName: 'geolite2-city-ipv4.mmdb', kind: 'city', priority: 50, license: 'GeoLite2' },
   { id: 'sapics-geolite2-city-ipv6', fileName: 'geolite2-city-ipv6.mmdb', kind: 'city', priority: 51, license: 'GeoLite2' },
   { id: 'sapics-origin-asn', fileName: 'origin-asn.mmdb', kind: 'asn', priority: 10, license: 'PDDL-1.0' },

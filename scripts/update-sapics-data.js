@@ -111,7 +111,7 @@ function validRecord(dataset, record) {
   if (!record) return false;
   if (dataset.kind === 'asn') return Number.isFinite(Number(record.autonomous_system_number ?? record.asn));
   if (dataset.kind === 'country') return Boolean(record.country?.iso_code || record.country_code || record.country);
-  return Boolean(record.country?.iso_code || record.city || record.location || record.subdivisions);
+  return typeof record === 'object' && Object.keys(record).length > 0;
 }
 
 async function validate(dataset, filePath) {
