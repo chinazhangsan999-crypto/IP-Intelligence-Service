@@ -187,6 +187,19 @@ async function start() {
           lastError: source.message,
           metadata: {},
         });
+        for (const [memberId, version] of Object.entries(provider.sourceVersions?.() || {})) {
+          await managementRepository.upsertDataSource({
+            id: memberId,
+            status: 'ready',
+            required: false,
+            version,
+            fileChecksum: null,
+            updatedAt: source.updated_at,
+            expiresAt: source.expires_at,
+            lastError: null,
+            metadata: { loaded_by: source.id },
+          });
+        }
       }
       logger.info('postgres_ready');
     } catch (error) {
@@ -198,7 +211,7 @@ async function start() {
   }
 
   async function reloadFileSources(updateResults = {}) {
-    const [nextCity, nextAsn, nextCloud, nextTor, nextProxy, nextNetworkEvidence, nextSupplementalProviders, nextMaxmindCountry, nextMaxmindCity, nextMaxmindAsn, nextIpgeoCommunity] = await Promise.all([
+    const [nextCity, nextAsn, nextCloud, nextTor, nextProxy, nextSupplementalProviders, nextMaxmindCountry, nextMaxmindCity, nextMaxmindAsn, nextIpgeoCommunity] = await Promise.all([
       MmdbProvider.load({
         id: 'dbip-city',
         filePath: config.ipData.cityPath,
@@ -212,7 +225,6 @@ async function start() {
       CloudRangeProvider.load(config.ipData.cloudRangePaths),
       TorExitProvider.load(config.ipData.torExitPath),
       Ip2ProxyProvider.load(config.ipData.ip2ProxyPath),
-      NetworkEvidenceProvider.load(config.dataDir),
       loadSupplementalProviders(),
       MmdbProvider.load({ id: 'maxmind-geolite2-country', required: false, filePath: config.ipData.maxmindCountryPath, cacheSize: config.ipData.cacheSize }),
       MmdbProvider.load({ id: 'maxmind-geolite2-city', required: false, filePath: config.ipData.maxmindCityPath, cacheSize: config.ipData.cacheSize }),
@@ -228,8 +240,24 @@ async function start() {
     if (nextTor.publicState().ready || !activeTorProvider.publicState().ready) activeTorProvider = nextTor;
     const previousProxyProvider = activeProxyProvider;
     if (nextProxy.publicState().ready || !activeProxyProvider.publicState().ready) activeProxyProvider = nextProxy;
-    if (nextNetworkEvidence.publicState().ready || !activeNetworkEvidenceProvider.publicState().ready) {
-      activeNetworkEvidenceProvider = nextNetworkEvidence;
+    // The BGP/RPKI/registration evidence indexes are large. Rebuilding them while
+    // the old indexes are live can briefly double memory use on the 4 GB host.
+    // Updated snapshots are therefore picked up on the next process restart.
+    if (Object.keys(updateResults).some((id) => [
+      'network-infrastructure',
+      'ripe-ris',
+      'routeviews',
+      'routinator-rpki',
+      'nro-rir',
+      'iana-rdap',
+      'iana-special-purpose',
+      'fullbogons',
+      'verified-crawlers',
+      'apple-private-relay',
+      'caida-as2org',
+      'peeringdb',
+    ].includes(id))) {
+      logger.info('network_evidence_restart_required');
     }
     activeSupplementalProviders = nextSupplementalProviders.map((provider, index) => (
       provider.publicState().ready || !activeSupplementalProviders[index]?.publicState().ready

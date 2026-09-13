@@ -120,6 +120,11 @@ main { width: min(calc(100% - 40px), var(--content)); margin: 0 auto; }
 .confidence-block span, .confidence-block small { display: block; color: var(--text-muted); font-size: 11px; }
 .confidence-block strong { display: block; margin: 7px 0 4px; font-size: 24px; }
 .identity-grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); margin: 0; }
+.judgment-alert { display: grid; gap: 5px; margin: 0 24px 20px; padding: 15px 17px; border: 1px solid rgba(245, 179, 66, .35); border-radius: 14px; background: rgba(245, 179, 66, .08); }
+.judgment-alert[hidden] { display: none; }
+.judgment-alert strong { color: #ffd58b; font-size: 14px; }
+.judgment-alert span { color: var(--text); font-size: 13px; }
+.judgment-alert small { color: var(--text-muted); overflow-wrap: anywhere; }
 .identity-grid > div { min-width: 0; min-height: 128px; padding: 24px 28px; border-right: 1px solid var(--border); }
 .identity-grid > div:last-child { border-right: 0; }
 .identity-grid.extended { grid-template-columns: repeat(3, minmax(0, 1fr)); }

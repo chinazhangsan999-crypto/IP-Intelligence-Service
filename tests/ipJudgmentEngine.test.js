@@ -23,7 +23,7 @@ test('higher-priority evidence wins while conflicting evidence remains visible',
   assert.deepEqual(result.conflicts.map((item) => item.field), ['network_type', 'is_hosting']);
 });
 
-test('equally strong contradictory evidence abstains regardless of insertion order', () => {
+test('equally strong contradictory evidence resolves deterministically regardless of insertion order', () => {
   const assertions = [
     { field: 'is_proxy', value: true, source: 'source-a', confidence: 'high', priority: 500 },
     { field: 'is_proxy', value: false, source: 'source-b', confidence: 'high', priority: 500 },
@@ -33,9 +33,10 @@ test('equally strong contradictory evidence abstains regardless of insertion ord
   assertions.forEach((item) => forward.add(item));
   assertions.toReversed().forEach((item) => reverse.add(item));
 
-  assert.equal(forward.resolve().flags.is_proxy, null);
-  assert.equal(reverse.resolve().flags.is_proxy, null);
+  assert.equal(forward.resolve().flags.is_proxy, true);
+  assert.equal(reverse.resolve().flags.is_proxy, true);
   assert.equal(forward.resolve().conflicts[0].field, 'is_proxy');
+  assert.equal(forward.resolve().conflicts[0].status, 'resolved_with_high_confidence_conflict');
 });
 
 test('rejects unsupported fields and non-boolean flag assertions', () => {

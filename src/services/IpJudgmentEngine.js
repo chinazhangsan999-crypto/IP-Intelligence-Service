@@ -1,4 +1,4 @@
-const CONFIDENCE_RANK = Object.freeze({ unknown: 0, low: 1, medium: 2, high: 3 });
+import { adjudicateEvidence } from './EvidenceAdjudicator.js';
 const NETWORK_TYPES = new Set([
   'residential', 'mobile', 'business', 'education', 'government', 'hosting', 'cdn', 'unknown',
 ]);
@@ -11,58 +11,8 @@ const FLAG_FIELDS = Object.freeze([
   'is_anycast',
 ]);
 
-function normalizeConfidence(value) {
-  return Object.hasOwn(CONFIDENCE_RANK, value) ? value : 'unknown';
-}
-
-function compareAssertions(left, right) {
-  return right.priority - left.priority
-    || CONFIDENCE_RANK[right.confidence] - CONFIDENCE_RANK[left.confidence]
-    || left.source.localeCompare(right.source);
-}
-
-function uniqueAssertions(assertions) {
-  const seen = new Set();
-  return assertions.filter((assertion) => {
-    const key = `${assertion.source}|${String(assertion.value)}|${assertion.priority}|${assertion.confidence}`;
-    if (seen.has(key)) return false;
-    seen.add(key);
-    return true;
-  });
-}
-
 function resolveAssertions(field, assertions, fallback) {
-  const ordered = uniqueAssertions(assertions).sort(compareAssertions);
-  if (ordered.length === 0) {
-    return { field, value: fallback, source: null, confidence: 'unknown', conflicted: false };
-  }
-
-  const strongest = ordered[0];
-  const tied = ordered.filter((item) => (
-    item.priority === strongest.priority && item.confidence === strongest.confidence
-  ));
-  const tiedValues = new Set(tied.map((item) => item.value));
-  const conflicted = new Set(ordered.map((item) => item.value)).size > 1;
-
-  if (tiedValues.size > 1) {
-    return {
-      field,
-      value: fallback,
-      source: null,
-      confidence: 'unknown',
-      conflicted: true,
-      assertions: ordered,
-    };
-  }
-
-  return {
-    field,
-    value: strongest.value,
-    source: strongest.source,
-    confidence: strongest.confidence,
-    conflicted,
-    assertions: ordered,
-  };
+  return adjudicateEvidence(field, assertions, fallback);
 }
 
 export class IpJudgmentEngine {
@@ -83,7 +33,7 @@ export class IpJudgmentEngine {
       field,
       value,
       source: String(source),
-      confidence: normalizeConfidence(confidence),
+      confidence: ['unknown', 'low', 'medium', 'high'].includes(confidence) ? confidence : 'unknown',
       priority: Number(priority),
     });
     return this;

@@ -41,6 +41,13 @@ test('database actions use semantic buttons and safe external links', async () =
   assert.doesNotMatch(script, /transition:\s*all/);
 });
 
+test('admin samples PostgreSQL pool state after management queries finish', async () => {
+  const script = await readFile(adminScriptUrl, 'utf8');
+  assert.match(script, /const management = await fetchManagement\(\);\s+const snapshot = await fetchSnapshot\(\);/);
+  assert.doesNotMatch(script, /Promise\.all\(\[fetchSnapshot\(\), fetchManagement\(\)\]\)/);
+  assert.match(script, /使用中.*空闲.*排队/);
+});
+
 test('every evidence source is represented by a manageable catalog unit', () => {
   const ids = DATA_SOURCE_UNITS.map((unit) => unit.id);
   assert.equal(new Set(ids).size, ids.length);

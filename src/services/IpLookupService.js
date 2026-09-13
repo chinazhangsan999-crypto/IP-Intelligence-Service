@@ -1,4 +1,6 @@
 import { parseIpInput } from '../ip/ipAddress.js';
+import { adjudicateEvidence } from './EvidenceAdjudicator.js';
+import { localizeResult } from './ChineseLocalizationService.js';
 
 function localizedName(value) {
   const names = value?.names;
@@ -64,6 +66,33 @@ function evidence(source, field, value, confidence) {
     : [{ source, field, value: String(value), confidence }];
 }
 
+function sourceConfidence(source) {
+  return source === 'ripe-ris' || source.startsWith('classification-rules') ? 'high' : 'medium';
+}
+
+function uniqueProviders(providers) {
+  const seen = new Set();
+  return providers.filter((provider) => {
+    if (!provider || seen.has(provider.id)) return false;
+    seen.add(provider.id);
+    return true;
+  });
+}
+
+function assertionsFor(records, field) {
+  return records
+    .map((item, index) => ({ item, index }))
+    .filter(({ item }) => item.available && item.record)
+    .map(({ item, index }) => ({
+      field,
+      value: item.fields[field],
+      source: item.provider.id,
+      confidence: sourceConfidence(item.provider.id),
+      priority: records.length - index,
+    }))
+    .filter((item) => item.value !== null && item.value !== undefined && item.value !== '');
+}
+
 function baseResult(parsed) {
   return {
     input: parsed.input,
@@ -102,6 +131,7 @@ function baseResult(parsed) {
     allocation_status: null,
     allocation_date: null,
     rdap_urls: [],
+    asn_rdap_urls: [],
     special_purpose: null,
     is_fullbogon: null,
     verified_crawler: null,
@@ -115,6 +145,10 @@ function baseResult(parsed) {
     confidence: 'unknown',
     evidence: [],
     source_claims: [],
+    country_judgment: null,
+    asn_judgment: null,
+    asn_org_judgment: null,
+    network_judgment: null,
     sources: [],
   };
 }
@@ -151,6 +185,7 @@ function invalidResult(parsed) {
     allocation_status: null,
     allocation_date: null,
     rdap_urls: [],
+    asn_rdap_urls: [],
     special_purpose: null,
     is_fullbogon: null,
     verified_crawler: null,
@@ -169,9 +204,9 @@ function invalidResult(parsed) {
 
 export class IpLookupService {
   constructor({ cityProvider, asnProvider, countryProviders = [], cityFallbackProviders = [], asnFallbackProviders = [], asnProviders = null, enricher = null, now = () => new Date() }) {
-    this.cityProviders = [cityProvider, ...cityFallbackProviders].filter(Boolean);
-    this.countryProviders = countryProviders.filter(Boolean);
-    this.asnProviders = (asnProviders || [asnProvider, ...asnFallbackProviders]).filter(Boolean);
+    this.cityProviders = uniqueProviders([cityProvider, ...cityFallbackProviders]);
+    this.countryProviders = uniqueProviders(countryProviders);
+    this.asnProviders = uniqueProviders(asnProviders || [asnProvider, ...asnFallbackProviders]);
     this.enricher = enricher;
     this.now = now;
   }
@@ -186,6 +221,7 @@ export class IpLookupService {
     return providers.reduce((versions, provider) => {
       const state = provider.publicState();
       if (state.ready && state.version) versions[state.id] = state.version;
+      Object.assign(versions, provider.sourceVersions?.() || {});
       return versions;
     }, {});
   }
@@ -200,7 +236,7 @@ export class IpLookupService {
         result.evidence.push(...(supplemental.evidence || []));
         result.sources.push(...(supplemental.sources || []));
       }
-      return result;
+      return localizeResult(result);
     }
 
     const query = (provider, fields) => {
@@ -225,11 +261,12 @@ export class IpLookupService {
       for (const [field, value] of Object.entries(item.fields)) {
         if (value === null || value === undefined || value === '') continue;
         result.source_claims.push({ source: item.provider.id, field, value });
-        result.evidence.push(...evidence(item.provider.id, field, value, item.provider.id.startsWith('sapics-') ? 'medium' : 'high'));
+        result.evidence.push(...evidence(item.provider.id, field, value, sourceConfidence(item.provider.id)));
       }
     }
     const countryRecords = [...countries, ...cities];
-    result.country_code = firstValue(countryRecords, 'country_code');
+    result.country_judgment = adjudicateEvidence('country_code', assertionsFor(countryRecords, 'country_code'), null);
+    result.country_code = result.country_judgment.value;
     result.country_name = countryNameFor(result.country_code)
       || countryRecords.find((item) => item.fields.country_code === result.country_code)?.fields.country_name
       || null;
@@ -248,8 +285,9 @@ export class IpLookupService {
     result.latitude = cityMatchesCountry ? selectedCity?.fields.latitude || null : null;
     result.longitude = cityMatchesCountry ? selectedCity?.fields.longitude || null : null;
     result.timezone = cityMatchesCountry ? selectedCity?.fields.timezone || null : null;
-    result.asn = firstValue(asns, 'asn');
-    result.asn_org = firstValue(asns, 'asn_org');
+    const preliminaryAsn = adjudicateEvidence('asn', assertionsFor(asns, 'asn'), null);
+    result.asn = preliminaryAsn.value;
+    result.asn_org = asns.find((item) => item.fields.asn === result.asn)?.fields.asn_org || firstValue(asns, 'asn_org');
 
     let enrichment = null;
     if (this.enricher) {
@@ -258,6 +296,20 @@ export class IpLookupService {
         asn: result.asn,
         asnOrg: result.asn_org,
       });
+      const asnAssertions = assertionsFor(asns, 'asn');
+      if (Number.isSafeInteger(enrichment.details?.bgp_origin_asn)) {
+        asnAssertions.push({
+          field: 'asn', value: enrichment.details.bgp_origin_asn, source: 'ripe-ris',
+          confidence: 'high', priority: enrichment.details.rpki_status === 'valid' ? 1050 : 1000,
+        });
+      }
+      result.asn_judgment = adjudicateEvidence('asn', asnAssertions, null);
+      const finalAsn = result.asn_judgment.value;
+      if (finalAsn !== result.asn) {
+        result.asn = finalAsn;
+        result.asn_org = asns.find((item) => item.fields.asn === finalAsn)?.fields.asn_org || result.asn_org;
+        enrichment = this.enricher.lookup({ ip: parsed.queryAddress, asn: finalAsn, asnOrg: result.asn_org });
+      }
       result.network_type = enrichment.networkType;
       result.is_mobile = enrichment.flags.is_mobile;
       result.is_hosting = enrichment.flags.is_hosting;
@@ -270,17 +322,25 @@ export class IpLookupService {
       result.evidence.push(...enrichment.evidence);
       result.sources.push(...enrichment.sources);
       result.sources = [...new Set(result.sources)];
+      result.network_judgment = enrichment.decisions?.find((item) => item.field === 'network_type') || null;
     }
 
+    if (!result.asn_judgment) result.asn_judgment = preliminaryAsn;
+    const orgAssertions = asns
+      .filter((item) => item.fields.asn === result.asn && item.fields.asn_org)
+      .map((item) => ({ field: 'asn_org', value: item.fields.asn_org, source: item.provider.id, confidence: sourceConfidence(item.provider.id) }));
+    if (result.canonical_org) orgAssertions.push({ field: 'asn_org', value: result.canonical_org, source: 'caida-as2org', confidence: 'high', priority: 900 });
+    result.asn_org_judgment = adjudicateEvidence('asn_org', orgAssertions, result.asn_org);
+    result.asn_org = result.asn_org_judgment.value;
+
     result.sources = [...new Set(result.sources)];
-    const matchedSources = claims.length;
-    const locationConfidence = matchedSources === 2 ? 'medium' : matchedSources === 1 ? 'low' : 'unknown';
     const levels = ['unknown', 'low', 'medium', 'high'];
     result.confidence = levels[Math.max(
-      levels.indexOf(locationConfidence),
+      levels.indexOf(result.country_judgment?.confidence || 'unknown'),
+      levels.indexOf(result.asn_judgment?.confidence || 'unknown'),
       levels.indexOf(enrichment?.confidence || 'unknown'),
     )];
-    return result;
+    return localizeResult(result);
   }
 
   lookupBatch(inputs) {

@@ -9,7 +9,8 @@
     'result-ip', 'copy-ip', 'generated-at', 'confidence-value', 'source-count',
     'location-country', 'location-detail', 'asn-value', 'asn-org', 'network-type',
     'network-note', 'isp-value', 'timezone-value', 'postcode-value', 'coordinates-value',
-    'location-alert', 'signal-grid', 'evidence-count', 'evidence-list', 'source-list', 'toast',
+    'location-alert', 'judgment-alert', 'judgment-title', 'judgment-summary', 'judgment-alternatives',
+    'signal-grid', 'evidence-count', 'evidence-list', 'source-list', 'toast',
   ].map((id) => [id, byId(id)]));
 
   const labels = Object.freeze({
@@ -32,7 +33,7 @@
       verified_crawler: '官方爬虫身份', is_private_relay: 'Apple 隐私中继',
       bgp_origin_asn: '当前 BGP Origin ASN', bgp_prefix: '当前 BGP 前缀',
       asn_conflict: 'ASN 来源冲突', rpki_status: 'RPKI 路由授权',
-      resource_registration: '地址资源注册', rdap_service: 'RDAP 查询服务',
+      resource_registration: '地址资源注册', rdap_service: 'IP RDAP 查询服务', asn_rdap_service: 'ASN RDAP 查询服务',
       canonical_org: '统一运营组织', peeringdb_network_type: 'PeeringDB 网络类别',
     },
   });
@@ -181,17 +182,19 @@
 
   function renderResult(data, meta) {
     elements['ip-version'].textContent = data.ip_version ? `IPv${data.ip_version}` : 'IP';
-    elements['scope-label'].textContent = labels.scope[data.scope] || text(data.scope);
+    elements['scope-label'].textContent = data.scope_zh || labels.scope[data.scope] || text(data.scope);
     elements['result-ip'].textContent = text(data.ip, '--');
     elements['generated-at'].textContent = `北京时间 ${formatTime(meta?.generated_at)}`;
-    elements['confidence-value'].textContent = labels.confidence[data.confidence] || text(data.confidence);
+    elements['confidence-value'].textContent = data.confidence_zh || labels.confidence[data.confidence] || text(data.confidence);
     elements['source-count'].textContent = `${Array.isArray(data.sources) ? data.sources.length : 0} 个数据源`;
     elements['location-country'].textContent = data.country_name || data.country_code || '暂无数据';
     elements['location-detail'].textContent = [data.region, data.city].filter(Boolean).join(' · ') || '暂无更细位置';
     elements['asn-value'].textContent = data.asn === null ? '暂无数据' : `AS${data.asn}`;
-    elements['asn-org'].textContent = text(data.asn_org);
-    elements['network-type'].textContent = labels.network[data.network_type] || text(data.network_type);
-    elements['network-note'].textContent = data.network_type === 'unknown' ? '数据不足，暂不判断' : '综合本地规则判断';
+    elements['asn-org'].textContent = text(data.asn_org_zh || data.asn_org);
+    elements['network-type'].textContent = data.network_type_zh || labels.network[data.network_type] || text(data.network_type);
+    elements['network-note'].textContent = data.network_type === 'unknown'
+      ? '数据不足，暂不判断'
+      : (data.network_judgment_zh || '综合本地规则判断');
     elements['isp-value'].textContent = text(data.isp);
     elements['timezone-value'].textContent = text(data.timezone);
     elements['postcode-value'].textContent = data.postcode ? `邮编 ${data.postcode}` : '暂无邮编数据';
@@ -206,6 +209,16 @@
     elements['location-alert'].hidden = !locationConflict;
     elements['location-alert'].textContent = locationConflict
       ? '不同数据源对国家与城市的判断不一致，系统已保留国家结论并隐藏冲突的城市坐标。'
+      : '';
+    const judgment = data.asn_judgment;
+    const hasDispute = Boolean(judgment?.conflicted);
+    elements['judgment-alert'].hidden = !hasDispute;
+    elements['judgment-title'].textContent = hasDispute ? 'ASN 存在来源争议，已自动裁决' : '';
+    elements['judgment-summary'].textContent = hasDispute
+      ? `${data.asn_judgment_zh || '已按固定规则裁决'}：采用 AS${judgment.value}（${judgment.support_count}/${judgment.total_independent_sources} 个独立来源支持）`
+      : '';
+    elements['judgment-alternatives'].textContent = hasDispute && Array.isArray(judgment.alternatives)
+      ? `其他结果：${judgment.alternatives.map((item) => `AS${item.value}（${item.support_count}票）`).join('、')}`
       : '';
     renderSignals(data);
     renderEvidence(data.evidence);

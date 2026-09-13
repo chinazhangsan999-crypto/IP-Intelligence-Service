@@ -68,6 +68,7 @@ X-Signature: <64位小写十六进制HMAC-SHA256>
       "allocation_status": "allocated",
       "allocation_date": "20110811",
       "rdap_urls": ["https://rdap.apnic.net/"],
+      "asn_rdap_urls": ["https://rdap.apnic.net/"],
       "special_purpose": null,
       "is_fullbogon": false,
       "verified_crawler": false,
@@ -115,7 +116,9 @@ X-Signature: <64位小写十六进制HMAC-SHA256>
 
 ## 多来源地理字段
 
-查询结果除 `country_code`、`region`、`city`、`asn` 外，还可能包含 `state1`、`state2`、`postcode`、`latitude`、`longitude` 与 `timezone`。`source_claims` 保留每个可用数据库提供的原始字段证据；最终顶层字段按配置优先级选择，冲突不会被伪装成确定结果。
+查询结果除 `country_code`、`region`、`city`、`asn` 外，还可能包含 `state1`、`state2`、`postcode`、`latitude`、`longitude` 与 `timezone`。`source_claims` 保留每个可用数据库提供的原始字段证据。`country_judgment`、`asn_judgment`、`asn_org_judgment` 与 `network_judgment` 说明自动裁决依据、独立来源支持数和备选结果：高可信证据优先；没有高可信证据时按独立来源多数选择；平票或高可信冲突按固定优先级稳定选择，同时保留 `conflicted`、`alternatives` 和降级后的置信度。
+
+面向中文界面的字段包括 `scope_zh`、`network_type_zh`、`confidence_zh`、`rpki_status_zh`、`allocation_country_name`、`asn_org_zh`、`asn_judgment_zh` 与 `network_judgment_zh`。英文/代码字段继续保留，旧调用方无需修改。
 
 每批必须满足：`unique_count = resolved_count + invalid_count + unavailable_count`。
 
@@ -139,7 +142,7 @@ X-Signature: <64位小写十六进制HMAC-SHA256>
 - `bgp_conflict`：数据库 ASN 是否与当前 BGP Origin 明确冲突；数据库 ASN 缺失时保持 `null`。
 - `rpki_status`：`valid`、`invalid_asn`、`invalid_length`、`mixed`、`not_found` 或 `null`。它只说明路由授权，不表示访客安全性。
 - `rir`、`allocation_*`：NRO/RIR 注册资源证据，不等于访客实际所在地。
-- `rdap_urls`：IANA Bootstrap 对应的权威 RDAP 服务，只返回安全的 HTTPS 地址；正式查询不会同步调用这些地址。
+- `rdap_urls`、`asn_rdap_urls`：IANA Bootstrap 对应的 IP 与 ASN 权威 RDAP 服务，只返回安全的 HTTPS 地址；正式查询不会同步调用这些地址。
 - `special_purpose`：IANA 特殊用途名称。
 - `is_fullbogon`：Team Cymru 快照命中；只能作为辅助证据。
 - `verified_crawler`、`crawler_operator`、`crawler_type`：Google/Bing 官方网段匹配结果，不依据 User-Agent 猜测。

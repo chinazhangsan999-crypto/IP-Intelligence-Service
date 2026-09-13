@@ -1,5 +1,5 @@
 import { execFile } from 'node:child_process';
-import { readdir, stat, statfs } from 'node:fs/promises';
+import { access, constants, readdir, stat, statfs } from 'node:fs/promises';
 import path from 'node:path';
 import { promisify } from 'node:util';
 import { DATA_SOURCE_UNITS, DATA_SOURCE_UNIT_IDS, publicDataSourceCatalog } from '../data/dataSourceCatalog.js';
@@ -16,6 +16,15 @@ async function directoryBytes(directory) {
     return (await stat(target)).size;
   }));
   return sizes.reduce((total, size) => total + size, 0);
+}
+
+async function directoryWritable(directory) {
+  try {
+    await access(directory, constants.W_OK);
+    return true;
+  } catch {
+    return false;
+  }
 }
 
 async function runScript(scriptPath, cwd, signal, args = [], env = process.env) {
@@ -49,6 +58,7 @@ export class DataUpdateScheduler {
     sapicsAutoUpdateEnabled = false,
     validateSources = null,
     credentialProvider = null,
+    writableCheck = directoryWritable,
   }) {
     this.enabled = enabled;
     this.intervalMs = intervalMs;
@@ -66,6 +76,7 @@ export class DataUpdateScheduler {
     this.sapicsAutoUpdateEnabled = sapicsAutoUpdateEnabled;
     this.validateSources = validateSources;
     this.credentialProvider = credentialProvider;
+    this.writableCheck = writableCheck;
     this.timer = null;
     this.running = false;
     this.stopped = false;
@@ -106,9 +117,10 @@ export class DataUpdateScheduler {
     const sources = await this.managementSnapshot();
     const enabledSources = sources.filter((source) => source.config?.enabled !== false);
     const dataDirectory = this.dataDir;
-    const [currentBytes, filesystem] = await Promise.all([
+    const [currentBytes, filesystem, dataDirectoryWritable] = await Promise.all([
       directoryBytes(dataDirectory).catch(() => 0),
       statfs(dataDirectory).catch(() => null),
+      this.writableCheck(dataDirectory),
     ]);
     const freeBytes = filesystem ? Number(filesystem.bavail) * Number(filesystem.bsize) : null;
     const estimatedTemporaryBytes = Math.ceil(currentBytes * 1.25) + FORCE_DOWNLOAD_RESERVE_BYTES;
@@ -120,9 +132,13 @@ export class DataUpdateScheduler {
       free_bytes: freeBytes,
       estimated_temporary_bytes: estimatedTemporaryBytes,
       enough_disk: freeBytes === null ? null : freeBytes >= estimatedTemporaryBytes,
-      warnings: enabledSources.some((source) => source.id === 'ip2proxy')
-        ? ['IP2Proxy 官方可能限制每日下载次数，无法在下载前读取剩余配额。']
-        : [],
+      data_directory_writable: dataDirectoryWritable,
+      warnings: [
+        ...(!dataDirectoryWritable ? ['数据目录不可写，服务无法保存新数据库。请先修复服务器数据目录权限。'] : []),
+        ...(enabledSources.some((source) => source.id === 'ip2proxy')
+          ? ['IP2Proxy 官方可能限制每日下载次数，无法在下载前读取剩余配额。']
+          : []),
+      ],
     };
   }
 
@@ -181,6 +197,9 @@ export class DataUpdateScheduler {
         targetVersion: startedAt.toISOString(),
         details: { trigger, force: options.force === true },
       });
+      if (!await this.writableCheck(this.dataDir)) {
+        throw new Error(`数据目录不可写：${this.dataDir}。请检查宿主机目录所有者，服务用户需要写权限。`);
+      }
       const results = {};
       const requestedIds = options.unitIds?.length ? options.unitIds : null;
       if (requestedIds?.some((id) => !DATA_SOURCE_UNIT_IDS.has(id))) {
@@ -224,7 +243,7 @@ export class DataUpdateScheduler {
           const credentials = await this.credentialProvider?.(name) || {};
           const env = { ...process.env, ...credentials };
           const result = await this.execute(scriptPath, this.cwd, this.abortController.signal, args, env);
-          if (result?.status === 'failed') throw new Error(`${name} data update did not install any valid source`);
+          if (result?.status === 'failed') throw new Error(result.error || `${name} data update did not install any valid source`);
           results[name] = {
             status: 'succeeded',
             result,

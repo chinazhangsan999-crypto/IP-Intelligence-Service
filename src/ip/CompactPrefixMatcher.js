@@ -109,6 +109,10 @@ export class CompactPrefixMatcher {
   }
 
   lookup(ip) {
+    return this.lookupDetailed(ip).map((item) => item.value);
+  }
+
+  lookupDetailed(ip) {
     if (!this.finalized) this.finalize();
     const address = ipaddr.parse(ip);
     const version = address.kind() === 'ipv4' ? 4 : 6;
@@ -119,9 +123,10 @@ export class CompactPrefixMatcher {
       const index = find(group, maskedWords(words, prefixLength));
       if (index < 0) continue;
       const value = group.values[index];
-      matches.push(...(Array.isArray(value) ? value : [value]));
+      for (const item of Array.isArray(value) ? value : [value]) {
+        matches.push({ prefixLength, value: item });
+      }
     }
     return matches;
   }
 }
-

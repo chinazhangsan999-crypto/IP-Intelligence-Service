@@ -35,7 +35,7 @@ export class IntelligenceEnricher {
   }
 
   lookupSupplementalEvidence({ ip, asn = null }) {
-    return this.networkEvidenceProvider?.lookup(ip, asn) || null;
+    return this.networkEvidenceProvider?.lookupSpecialPurpose(ip, asn) || null;
   }
 
   lookup({ ip, asn, asnOrg }) {
@@ -170,6 +170,7 @@ export class IntelligenceEnricher {
       evidence,
       sources: [...new Set(sources)],
       conflicts: judgment.conflicts,
+      decisions: judgment.decisions,
       details,
     };
   }

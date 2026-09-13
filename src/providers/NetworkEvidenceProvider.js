@@ -13,6 +13,7 @@ const SOURCE_FILES = Object.freeze({
   rir: 'nro-delegated-stats.txt',
   rdap4: 'rdap-ipv4.json',
   rdap6: 'rdap-ipv6.json',
+  rdapAsn: 'rdap-asn.json',
   iana4: 'iana-ipv4-special-registry.json',
   iana6: 'iana-ipv6-special-registry.json',
   fullbogons4: 'fullbogons-ipv4.txt',
@@ -58,6 +59,25 @@ function cidrLength(cidr) {
 function normalizedAsn(value) {
   const number = Number(String(value ?? '').replace(/^AS/i, ''));
   return Number.isSafeInteger(number) && number >= 0 ? number : null;
+}
+
+function networkCidr(ip, prefixLength) {
+  const address = ipaddr.parse(ip);
+  const bytes = address.toByteArray();
+  for (let index = 0; index < bytes.length; index += 1) {
+    const bits = prefixLength - index * 8;
+    if (bits >= 8) continue;
+    bytes[index] = bits <= 0 ? 0 : bytes[index] & (0xff << (8 - bits));
+  }
+  return `${ipaddr.fromByteArray(bytes).toString()}/${prefixLength}`;
+}
+
+function encodeRoa(asn, maxLength) {
+  return asn * 256 + maxLength;
+}
+
+function decodeRoa(value) {
+  return { asn: Math.floor(value / 256), maxLength: value % 256 };
 }
 
 function prefixRows(payload) {
@@ -134,7 +154,7 @@ async function loadRipeRisLayer(filePaths) {
         const asns = match[1].replace(/[{}]/g, '').split(',').map(normalizedAsn).filter(Number.isSafeInteger);
         if (asns.length === 0) continue;
         try {
-          matcher.add(match[2], { prefix: match[2], asns, peers: Number(match[3]) || 0 });
+          for (const asn of asns) matcher.add(match[2], asn);
           records += 1;
         } catch {
           // Ignore malformed route rows.
@@ -157,11 +177,8 @@ async function loadRpkiLayer(filePath) {
       const asn = normalizedAsn(roa?.asn);
       if (!roa?.prefix || asn === null) continue;
       try {
-        matcher.add(roa.prefix, {
-          prefix: roa.prefix,
-          asn,
-          maxLength: Number.isInteger(Number(roa.maxLength)) ? Number(roa.maxLength) : cidrLength(roa.prefix),
-        });
+        const maxLength = Number.isInteger(Number(roa.maxLength)) ? Number(roa.maxLength) : cidrLength(roa.prefix);
+        matcher.add(roa.prefix, encodeRoa(asn, maxLength));
         records += 1;
       } catch {
         // Ignore malformed VRPs.
@@ -226,7 +243,7 @@ async function loadRirLayer(filePath) {
   }, id);
 }
 
-async function loadRdapLayer(filePaths) {
+async function loadRdapLayer(filePaths, asnFilePath) {
   const id = 'iana-rdap-bootstrap';
   const matcher = new CompactPrefixMatcher();
   let records = 0;
@@ -253,8 +270,41 @@ async function loadRdapLayer(filePaths) {
       if (error.code !== 'ENOENT') return emptyLayer(id, 'RDAP bootstrap could not be loaded');
     }
   }
+  const asnRanges = [];
+  try {
+    const stats = await fsp.stat(asnFilePath);
+    newest = !newest || stats.mtime > newest ? stats.mtime : newest;
+    const payload = JSON.parse(await fsp.readFile(asnFilePath, 'utf8'));
+    for (const service of payload?.services || []) {
+      const [ranges, urls] = service;
+      const safeUrls = (urls || []).filter((url) => /^https:\/\//i.test(url));
+      for (const value of ranges || []) {
+        const [start, end = start] = String(value).split('-').map(Number);
+        if (!Number.isSafeInteger(start) || !Number.isSafeInteger(end) || end < start) continue;
+        asnRanges.push({ start, end, urls: safeUrls });
+        records += 1;
+      }
+    }
+    asnRanges.sort((left, right) => left.start - right.start);
+  } catch (error) {
+    if (error.code !== 'ENOENT') return emptyLayer(id, 'RDAP bootstrap could not be loaded');
+  }
   if (availableFiles === 0 || records === 0) return emptyLayer(id);
-  return readyLayer(id, { matcher: matcher.finalize(), complete: availableFiles === filePaths.length }, { mtime: newest }, records);
+  return readyLayer(id, { matcher: matcher.finalize(), asnRanges, complete: availableFiles === filePaths.length }, { mtime: newest }, records);
+}
+
+function rdapUrlsForAsn(ranges, asn) {
+  if (!Number.isSafeInteger(asn)) return [];
+  let low = 0;
+  let high = ranges.length - 1;
+  while (low <= high) {
+    const middle = (low + high) >>> 1;
+    const range = ranges[middle];
+    if (asn < range.start) high = middle - 1;
+    else if (asn > range.end) low = middle + 1;
+    else return range.urls;
+  }
+  return [];
 }
 
 async function loadCaidaLayer(filePath) {
@@ -302,20 +352,19 @@ async function loadPeeringDbLayer(filePath) {
 
 function routeFor(layer, ip) {
   if (!layer.available) return null;
-  const matches = layer.matcher.lookup(ip);
+  const matches = layer.matcher.lookupDetailed(ip);
   if (matches.length === 0) return null;
-  const length = Math.max(...matches.map((item) => cidrLength(item.prefix)));
-  const selected = matches.filter((item) => cidrLength(item.prefix) === length);
+  const length = matches[0].prefixLength;
+  const selected = matches.filter((item) => item.prefixLength === length);
   return {
-    prefix: selected[0].prefix,
-    asns: [...new Set(selected.flatMap((item) => item.asns))].sort((a, b) => a - b),
-    peers: Math.max(...selected.map((item) => item.peers || 0)),
+    prefix: networkCidr(ip, length),
+    asns: [...new Set(selected.map((item) => item.value))].sort((a, b) => a - b),
   };
 }
 
 function rpkiStatus(layer, ip, route) {
   if (!layer.available || !route) return null;
-  const vrps = layer.matcher.lookup(ip);
+  const vrps = layer.matcher.lookup(ip).map(decodeRoa);
   if (vrps.length === 0) return 'not_found';
   const routeLength = cidrLength(route.prefix);
   const results = route.asns.map((origin) => {
@@ -374,7 +423,7 @@ export class NetworkEvidenceProvider {
       }
     });
     layers.rir = await loadRirLayer(file('rir'));
-    layers.rdap = await loadRdapLayer([file('rdap4'), file('rdap6')]);
+    layers.rdap = await loadRdapLayer([file('rdap4'), file('rdap6')], file('rdapAsn'));
     layers.rpki = await loadRpkiLayer(file('rpki'));
     layers.ripeRis = await loadRipeRisLayer([file('ripeRis4'), file('ripeRis6')]);
     layers.caida = await loadCaidaLayer(file('caida'));
@@ -426,6 +475,20 @@ export class NetworkEvidenceProvider {
     return readyLayer('verified-crawlers', { matcher: matcher.finalize(), complete: files === definitions.length }, { mtime: newest }, records);
   }
 
+  lookupSpecialPurpose(ip) {
+    const layers = [this.layers.iana4, this.layers.iana6];
+    const special = layers.flatMap((layer) => safeLookup(layer, ip))[0];
+    const sources = layers.some((layer) => layer.available) ? ['iana-special'] : [];
+    if (!special) return { details: { special_purpose: null }, evidence: [], sources, assertions: [] };
+    const value = special.Name || 'Special-Purpose Address';
+    return {
+      details: { special_purpose: value },
+      evidence: [{ source: 'iana-special', field: 'special_purpose', value, confidence: 'high' }],
+      sources,
+      assertions: [],
+    };
+  }
+
   lookup(ip, asn = null) {
     const details = {
       bgp_origin_asn: null,
@@ -438,6 +501,7 @@ export class NetworkEvidenceProvider {
       allocation_status: null,
       allocation_date: null,
       rdap_urls: [],
+      asn_rdap_urls: [],
       special_purpose: null,
       is_fullbogon: this.layers.fullbogons.available ? false : null,
       verified_crawler: this.layers.crawlers.available && this.layers.crawlers.complete ? false : null,
@@ -526,6 +590,10 @@ export class NetworkEvidenceProvider {
     }
 
     const normalized = normalizedAsn(asn);
+    if (normalized !== null && this.layers.rdap.available) {
+      details.asn_rdap_urls = [...new Set(rdapUrlsForAsn(this.layers.rdap.asnRanges || [], normalized))];
+      if (details.asn_rdap_urls.length > 0) evidence.push({ source: 'iana-rdap-bootstrap', field: 'asn_rdap_service', value: details.asn_rdap_urls[0], confidence: 'high' });
+    }
     if (normalized !== null && this.layers.caida.available) {
       sources.push('caida-as2org');
       const organization = this.layers.caida.asns.get(normalized);
@@ -552,5 +620,23 @@ export class NetworkEvidenceProvider {
 
   publicState() {
     return { ...this.state };
+  }
+
+  sourceVersions() {
+    const value = (layer) => layer?.available
+      ? `${layer.updatedAt?.slice(0, 10) || 'local'} / ${layer.records} records`
+      : null;
+    return Object.fromEntries(Object.entries({
+      'iana-special': this.layers.iana4.available ? this.layers.iana4 : this.layers.iana6,
+      fullbogons: this.layers.fullbogons,
+      'verified-crawlers': this.layers.crawlers,
+      'apple-private-relay-ranges': this.layers.appleRelay,
+      'ripe-ris': this.layers.ripeRis,
+      'rpki-vrps': this.layers.rpki,
+      'nro-rir-delegated': this.layers.rir,
+      'iana-rdap-bootstrap': this.layers.rdap,
+      'caida-as2org': this.layers.caida,
+      'peeringdb-networks': this.layers.peeringDb,
+    }).map(([id, layer]) => [id, value(layer)]).filter(([, version]) => version));
   }
 }

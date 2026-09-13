@@ -300,12 +300,12 @@ export const DATA_SOURCE_UNITS = Object.freeze([
     members: Object.freeze([{ id: 'github-meta-ranges', name: 'GitHub Meta IP ranges', kind: 'cloud', required: false, license: 'GitHub terms', homepageUrl: 'https://docs.github.com/rest/meta/meta' }]),
   }),
   Object.freeze({
-    id: 'maxmind-geolite2', displayName: 'MaxMind GeoLite2', description: '本地 Country、City 与 ASN MMDB 查询，凭据仅保存在服务器加密库。', category: 'geo_asn', script: 'update-community-data.js', scriptArgs: Object.freeze(['maxmind-geolite2']), defaultEnabled: true, defaultAutoUpdate: true, defaultIntervalHours: 168,
+    id: 'maxmind-geolite2', displayName: 'MaxMind GeoLite2', description: '本地 Country、City 与 ASN MMDB 查询，凭据仅保存在服务器加密库。', category: 'geo_asn', script: 'update-community-data.js', scriptArgs: Object.freeze(['maxmind-geolite2']), defaultEnabled: false, defaultAutoUpdate: false, defaultIntervalHours: 168,
     credentials: Object.freeze([{ name: 'account_id', label: 'MaxMind Account ID' }, { name: 'license_key', label: 'MaxMind License Key' }]),
     members: Object.freeze([{ id: 'maxmind-geolite2-country', name: 'GeoLite2 Country', kind: 'country', required: false, license: 'MaxMind GeoLite2 EULA' }, { id: 'maxmind-geolite2-city', name: 'GeoLite2 City', kind: 'city', required: false, license: 'MaxMind GeoLite2 EULA' }, { id: 'maxmind-geolite2-asn', name: 'GeoLite2 ASN', kind: 'asn', required: false, license: 'MaxMind GeoLite2 EULA' }]),
   }),
   Object.freeze({
-    id: 'spamhaus-drop', displayName: 'Spamhaus DROP', description: '恶意网络块风险证据；保留来源、版权与数据日期，不会单独触发封禁。', category: 'reputation', script: 'update-community-data.js', scriptArgs: Object.freeze(['spamhaus-drop']), defaultEnabled: true, defaultAutoUpdate: true, defaultIntervalHours: 24,
+    id: 'spamhaus-drop', displayName: 'Spamhaus DROP', description: '恶意网络块风险证据；保留来源、版权与数据日期，不会单独触发封禁。', category: 'reputation', script: 'update-community-data.js', scriptArgs: Object.freeze(['spamhaus-drop']), defaultEnabled: false, defaultAutoUpdate: false, defaultIntervalHours: 24,
     members: Object.freeze([{ id: 'spamhaus-drop-v4', name: 'Spamhaus DROP IPv4', kind: 'reputation', required: false, license: 'Spamhaus attribution required', homepageUrl: 'https://www.spamhaus.org/blocklists/do-not-route-or-peer/' }, { id: 'spamhaus-drop-v6', name: 'Spamhaus DROP IPv6', kind: 'reputation', required: false, license: 'Spamhaus attribution required', homepageUrl: 'https://www.spamhaus.org/blocklists/do-not-route-or-peer/' }]),
   }),
   Object.freeze({

@@ -14,9 +14,42 @@ function scheduler(overrides = {}) {
     logger,
     reloadSources: async () => [{ id: 'dbip-city', status: 'ready', version: 'test' }],
     execute: async (scriptPath) => ({ scriptPath }),
+    writableCheck: async () => true,
     ...overrides,
   });
 }
+
+test('force-download preflight reports an unwritable data directory', async () => {
+  const instance = scheduler({
+    dataDir: 'C:\\service\\data',
+    writableCheck: async () => false,
+  });
+
+  const result = await instance.forceDownloadPreflight();
+
+  assert.equal(result.data_directory_writable, false);
+  assert.equal(result.warnings.some((warning) => warning.includes('数据目录不可写')), true);
+});
+
+test('an unwritable data directory fails before any updater executes', async () => {
+  let executions = 0;
+  const finished = [];
+  const instance = scheduler({
+    writableCheck: async () => false,
+    execute: async () => { executions += 1; },
+    repository: {
+      async startUpdateJob() { return { id: 12 }; },
+      async finishUpdateJob(id, result) { finished.push({ id, ...result }); },
+    },
+  });
+
+  const result = await instance.runCycle({ trigger: 'manual' });
+
+  assert.equal(result.status, 'failed');
+  assert.equal(executions, 0);
+  assert.match(result.error, /数据目录不可写/);
+  assert.equal(finished[0].status, 'failed');
+});
 
 test('successful automatic update runs every default automatic source, reloads once and records the job', async () => {
   const calls = [];
@@ -53,6 +86,18 @@ test('one failed source does not prevent a successful source from being hot relo
   assert.equal(result.status, 'failed');
   assert.equal(reloads, 1);
   assert.equal(result.details.results.open.status, 'succeeded');
+});
+
+test('a structured updater failure is persisted without a child-process stack trace', async () => {
+  const instance = scheduler({
+    execute: async () => ({ status: 'failed', error: '下载格式无效' }),
+  });
+
+  const result = await instance.runCycle({ unitIds: ['dbip'], trigger: 'manual' });
+
+  assert.equal(result.status, 'failed');
+  assert.equal(result.details.results.dbip.error, '下载格式无效');
+  assert.equal(result.error, 'dbip: 下载格式无效');
 });
 
 test('IP2Proxy updater runs only when its own automatic update setting is enabled', async () => {

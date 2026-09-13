@@ -577,9 +577,15 @@
     elements['kpi-memory'].textContent = formatBytes(snapshot.process?.resident_memory_bytes);
     elements['kpi-heap'].textContent = `堆内存 ${formatBytes(snapshot.process?.heap_used_bytes)}`;
     elements['kpi-postgres'].textContent = snapshot.postgres ? '已连接' : '未配置';
-    elements['kpi-pool'].textContent = snapshot.postgres
-      ? `总连接 ${snapshot.postgres.total_connections} · 等待 ${snapshot.postgres.waiting_requests}`
-      : '开发模式可不启用';
+    if (snapshot.postgres) {
+      const totalConnections = Number(snapshot.postgres.total_connections || 0);
+      const idleConnections = Number(snapshot.postgres.idle_connections || 0);
+      const activeConnections = Math.max(0, totalConnections - idleConnections);
+      const waitingRequests = Number(snapshot.postgres.waiting_requests || 0);
+      elements['kpi-pool'].textContent = `总连接 ${totalConnections} · 使用中 ${activeConnections} · 空闲 ${idleConnections} · 排队 ${waitingRequests}`;
+    } else {
+      elements['kpi-pool'].textContent = '开发模式可不启用';
+    }
     setStatus(ready ? 'good' : 'bad', ready ? '数据源已就绪' : '服务处于降级');
     elements['updated-at'].dateTime = new Date().toISOString();
     elements['updated-at'].textContent = dateFormat.format(new Date());
@@ -603,13 +609,19 @@
     renderTrend();
   }
 
+  async function fetchDashboardData() {
+    const management = await fetchManagement();
+    const snapshot = await fetchSnapshot();
+    return { snapshot, management };
+  }
+
   async function refresh({ initial = false } = {}) {
     if (!authenticated || refreshing) return;
     refreshing = true;
     elements['refresh-button'].disabled = true;
     if (!initial) setStatus('neutral', '正在刷新');
     try {
-      const [snapshot, management] = await Promise.all([fetchSnapshot(), fetchManagement()]);
+      const { snapshot, management } = await fetchDashboardData();
       clearError();
       render(snapshot);
       renderManagement(management);
@@ -680,7 +692,7 @@
       });
       applySession(login.data);
       elements['login-password'].value = '';
-      const [snapshot, management] = await Promise.all([fetchSnapshot(), fetchManagement()]);
+      const { snapshot, management } = await fetchDashboardData();
       render(snapshot);
       renderManagement(management);
       startPolling();
@@ -942,14 +954,21 @@
         elements['download-preflight'].append(disabled);
       }
       const enoughDisk = preflight.enough_disk !== false;
+      const dataDirectoryWritable = preflight.data_directory_writable !== false;
       if (!enoughDisk) {
         const danger = document.createElement('span');
         danger.className = 'preflight-danger';
         danger.textContent = '可用磁盘空间不足，已禁止启动强制下载。';
         elements['download-preflight'].append(danger);
       }
+      if (!dataDirectoryWritable) {
+        const danger = document.createElement('span');
+        danger.className = 'preflight-danger';
+        danger.textContent = '服务器数据目录不可写，已禁止启动下载。请先修复目录权限。';
+        elements['download-preflight'].append(danger);
+      }
       elements['download-preflight'].hidden = false;
-      elements['download-confirm'].disabled = !enoughDisk;
+      elements['download-confirm'].disabled = !enoughDisk || !dataDirectoryWritable;
       elements['download-confirm'].textContent = '确认强制重新下载全部';
       elements['download-dialog'].showModal();
       elements['download-confirm'].focus();
@@ -1071,7 +1090,7 @@
 
   request('/admin/api/session').then(async (response) => {
     applySession(response.data);
-    const [snapshot, management] = await Promise.all([fetchSnapshot(), fetchManagement()]);
+    const { snapshot, management } = await fetchDashboardData();
     render(snapshot);
     renderManagement(management);
     startPolling();

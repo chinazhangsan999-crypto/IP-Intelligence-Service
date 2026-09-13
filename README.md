@@ -37,6 +37,7 @@
 - 运维后台：独立账号密码登录、安全会话、账户修改、运行概览、实时吞吐趋势、数据源、更新器、连接池和接口性能。
 - 暗黑公开查询前台：单 IP 查询、当前访问地址识别、网络身份摘要、风险三态、判断证据与数据覆盖说明。
 - 系统管理数据库中心：统一管理 DB-IP、SAPICS、RIPE RIS、RouteViews、RPKI、NRO/RIR、RDAP、CAIDA、PeeringDB、IANA 特殊地址、Team Cymru Fullbogon、Google/Bing 官方爬虫、Apple Private Relay 与云厂商来源；每组支持启停、自动周期、手动更新、强制下载、状态、版本和错误展示。
+- 正式查询使用本地快照补充 BGP Origin、RPKI、RIR、RDAP、特殊用途、Fullbogon、官方爬虫、Apple Private Relay、CAIDA 组织与 PeeringDB 类型证据；查询过程中不会同步请求外部服务，也不会将任一辅助标签直接用于封禁或处罚。
 - 身份与路由标签只作为证据和人工审核信息，不作为单项封禁、扣分或处罚依据。
 - Azure Public 与 Azure China（世纪互联）作为两个独立官方来源每周同步；Akamai 按当前授权保持停用且不配置凭据。
 
