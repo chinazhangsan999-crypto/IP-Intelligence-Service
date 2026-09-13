@@ -1,6 +1,7 @@
 import http from 'node:http';
 import { timingSafeEqual } from 'node:crypto';
 import { HttpError } from './http/HttpError.js';
+import { projectExternalLookupBatch } from './services/ExternalLookupProjection.js';
 import { sendError, sendJson } from './http/respond.js';
 import { resolveRequestId } from './utils/requestId.js';
 import { normalizeClassificationRule } from './services/ClassificationRuleService.js';
@@ -805,23 +806,24 @@ export function createHttpServer({
         );
       }
 
-      const result = lookupService.lookupBatch(ips);
-      metrics?.observeLookup(result.meta);
+      const internalResult = lookupService.lookupBatch(ips);
+      metrics?.observeLookup(internalResult.meta);
       if (usageRepository) {
         const bucketStart = new Date(Math.floor(Date.now() / 3_600_000) * 3_600_000);
         Promise.resolve().then(() => usageRepository.recordUsage({
           apiClientId: authentication.client.id,
           bucketStart,
           requests: 1,
-          ips: result.meta.unique_count,
-          successes: result.meta.resolved_count,
-          errors: result.meta.invalid_count + result.meta.unavailable_count,
+          ips: internalResult.meta.unique_count,
+          successes: internalResult.meta.resolved_count,
+          errors: internalResult.meta.invalid_count + internalResult.meta.unavailable_count,
         })).catch((error) => logger.error('usage_record_failed', {
           request_id: requestId,
           api_client_id: authentication.client.id,
           error,
         }));
       }
+      const result = projectExternalLookupBatch(internalResult);
       sendJson(res, 200, {
         request_id: requestId,
         code: 'OK',

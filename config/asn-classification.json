@@ -1,4 +1,16 @@
 {
-  "version": 1,
-  "rules": []
+  "version": 2,
+  "rules": [
+    {
+      "name": "FDC Servers data center ASN",
+      "priority": 650,
+      "match_type": "asn",
+      "match_value": "30058",
+      "network_type": "hosting",
+      "confidence": "medium",
+      "flags": {
+        "is_hosting": true
+      }
+    }
+  ]
 }

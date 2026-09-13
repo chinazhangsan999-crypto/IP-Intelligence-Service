@@ -112,7 +112,7 @@ test('keeps every available source claim while choosing configured country and A
   assert.ok(result.source_claims.some((claim) => claim.source === 'dbip-asn' && claim.field === 'asn'));
 });
 
-test('does not combine city fields from different providers into one location', () => {
+test('preserves the selected city while supplementing a missing timezone from a compatible provider', () => {
   const primaryCity = provider('dbip-city', { '8.8.8.8': {
     country: { iso_code: 'US' }, city: { names: { en: 'Mountain View' } },
     location: { latitude: 37.4, longitude: -122.0 },
@@ -124,8 +124,32 @@ test('does not combine city fields from different providers into one location', 
   const service = new IpLookupService({ cityProvider: primaryCity, asnProvider: provider('dbip-asn'), cityFallbackProviders: [fallbackCity] });
   const [result] = service.lookupBatch(['8.8.8.8']).data;
   assert.equal(result.city, 'Mountain View');
-  assert.equal(result.timezone, null);
+  assert.equal(result.timezone, 'Elsewhere/Time');
   assert.ok(result.source_claims.some((claim) => claim.value === 'Elsewhere/Time'));
+});
+
+test('uses a more specific compatible fallback location when the preferred record is country-only', () => {
+  const preferredCity = provider('maxmind-geolite2-city', { '42.234.60.210': {
+    country: { iso_code: 'CN', names: { en: 'China' } },
+  } });
+  const dbipCity = provider('dbip-city', { '42.234.60.210': {
+    country: { iso_code: 'CN', names: { en: 'China' } },
+    subdivisions: [{ names: { en: 'Henan' } }],
+    city: { names: { en: 'Zhengzhou' } },
+    location: { latitude: 34.7472, longitude: 113.625 },
+  } });
+  const service = new IpLookupService({
+    cityProvider: preferredCity,
+    asnProvider: provider('dbip-asn'),
+    cityFallbackProviders: [dbipCity],
+  });
+
+  const [result] = service.lookupBatch(['42.234.60.210']).data;
+  assert.equal(result.country_code, 'CN');
+  assert.equal(result.region, 'Henan');
+  assert.equal(result.city, 'Zhengzhou');
+  assert.equal(result.latitude, 34.7472);
+  assert.equal(result.longitude, 113.625);
 });
 
 test('does not present a conflicting city country as a coherent user location', () => {

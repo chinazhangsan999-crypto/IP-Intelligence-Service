@@ -93,6 +93,43 @@ function assertionsFor(records, field) {
     .filter((item) => item.value !== null && item.value !== undefined && item.value !== '');
 }
 
+function locationSpecificity(fields = {}) {
+  // A country-only record is useful for country adjudication, but should not
+  // prevent a lower-priority city database from contributing a verified
+  // province/city location. Keep all fields from one selected provider.
+  return (fields.city ? 4 : 0)
+    + (fields.state1 ? 2 : 0)
+    + (fields.state2 ? 1 : 0);
+}
+
+function selectLocationRecord(records, countryCodeValue) {
+  const available = records.filter((item) => item.record);
+  const compatible = available.filter((item) => (
+    !countryCodeValue
+    || !item.fields.country_code
+    || item.fields.country_code === countryCodeValue
+  ));
+
+  if (compatible.length > 0) {
+    return [...compatible]
+      .map((item, index) => ({ item, index, specificity: locationSpecificity(item.fields) }))
+      .sort((left, right) => right.specificity - left.specificity || left.index - right.index)[0]
+      .item;
+  }
+
+  return available[0] || null;
+}
+
+function firstCompatibleLocationField(records, countryCodeValue, field) {
+  for (const item of records) {
+    if (!item.record) continue;
+    if (countryCodeValue && item.fields.country_code && item.fields.country_code !== countryCodeValue) continue;
+    const value = item.fields[field];
+    if (value !== null && value !== undefined && value !== '') return value;
+  }
+  return null;
+}
+
 function baseResult(parsed) {
   return {
     input: parsed.input,
@@ -115,6 +152,7 @@ function baseResult(parsed) {
     asn_org: null,
     isp: null,
     network_type: 'unknown',
+    network_type_confidence: 'unknown',
     is_mobile: null,
     is_hosting: null,
     is_proxy: null,
@@ -169,6 +207,7 @@ function invalidResult(parsed) {
     asn_org: null,
     isp: null,
     network_type: 'unknown',
+    network_type_confidence: 'unknown',
     is_mobile: null,
     is_hosting: null,
     is_proxy: null,
@@ -270,7 +309,7 @@ export class IpLookupService {
     result.country_name = countryNameFor(result.country_code)
       || countryRecords.find((item) => item.fields.country_code === result.country_code)?.fields.country_name
       || null;
-    const selectedCity = cities.find((item) => item.record) || null;
+    const selectedCity = selectLocationRecord(cities, result.country_code);
     const cityMatchesCountry = !selectedCity?.fields.country_code
       || !result.country_code
       || selectedCity.fields.country_code === result.country_code;
@@ -281,10 +320,14 @@ export class IpLookupService {
     result.state2 = cityMatchesCountry ? selectedCity?.fields.state2 || null : null;
     result.region = result.state1;
     result.city = cityMatchesCountry ? selectedCity?.fields.city || null : null;
-    result.postcode = cityMatchesCountry ? selectedCity?.fields.postcode || null : null;
+    result.postcode = cityMatchesCountry
+      ? selectedCity?.fields.postcode || firstCompatibleLocationField(cities, result.country_code, 'postcode')
+      : null;
     result.latitude = cityMatchesCountry ? selectedCity?.fields.latitude || null : null;
     result.longitude = cityMatchesCountry ? selectedCity?.fields.longitude || null : null;
-    result.timezone = cityMatchesCountry ? selectedCity?.fields.timezone || null : null;
+    result.timezone = cityMatchesCountry
+      ? selectedCity?.fields.timezone || firstCompatibleLocationField(cities, result.country_code, 'timezone')
+      : null;
     const preliminaryAsn = adjudicateEvidence('asn', assertionsFor(asns, 'asn'), null);
     result.asn = preliminaryAsn.value;
     result.asn_org = asns.find((item) => item.fields.asn === result.asn)?.fields.asn_org || firstValue(asns, 'asn_org');
@@ -323,6 +366,7 @@ export class IpLookupService {
       result.sources.push(...enrichment.sources);
       result.sources = [...new Set(result.sources)];
       result.network_judgment = enrichment.decisions?.find((item) => item.field === 'network_type') || null;
+      result.network_type_confidence = result.network_judgment?.confidence || 'unknown';
     }
 
     if (!result.asn_judgment) result.asn_judgment = preliminaryAsn;

@@ -317,7 +317,11 @@ test('public lookup shell and single-IP endpoint work without exposing HMAC cred
   const lookupService = {
     lookupBatch(ips) {
       return {
-        data: [{ ip: ips[0], status: 'resolved', sources: ['dbip-city'] }],
+        data: [{
+          ip: ips[0], status: 'resolved', sources: ['dbip-city'],
+          asn_judgment: { value: 13335, support_count: 2 },
+          bgp_origin_asn: 13335,
+        }],
         meta: { generated_at: '2026-09-11T00:00:00.000Z', database_versions: {} },
       };
     },
@@ -334,6 +338,8 @@ test('public lookup shell and single-IP endpoint work without exposing HMAC cred
     assert.equal(response.status, 200);
     assert.equal(body.code, 'OK');
     assert.equal(body.data.ip, '1.1.1.1');
+    assert.equal(body.data.asn_judgment.value, 13335);
+    assert.equal(body.data.bgp_origin_asn, 13335);
     assert.equal(response.headers.get('x-rate-limit-limit'), '2');
     assert.equal(response.headers.get('x-rate-limit-remaining'), '1');
   }, {
@@ -554,7 +560,13 @@ test('lookup returns the service batch result in the versioned envelope', async 
   const lookupService = {
     lookupBatch(ips) {
       return {
-        data: [{ input: ips[0], status: 'resolved' }],
+        data: [{
+          input: ips[0], status: 'resolved', asn: 13335, asn_org: 'Cloudflare, Inc.',
+          asn_judgment: { value: 13335, support_count: 4 },
+          bgp_origin_asn: 13335, rpki_status: 'valid',
+          evidence: [{ source: 'ripe-ris', field: 'asn', value: 13335, confidence: 'high' }],
+          sources: ['ripe-ris'],
+        }],
         meta: {
           requested_count: 1,
           unique_count: 1,
@@ -578,6 +590,13 @@ test('lookup returns the service batch result in the versioned envelope', async 
     assert.equal(response.status, 200);
     assert.equal(body.code, 'OK');
     assert.equal(body.data[0].input, '1.1.1.1');
+    assert.equal(body.data[0].asn, 13335);
+    assert.equal(body.data[0].asn_org, 'Cloudflare, Inc.');
+    assert.equal(body.data[0].asn_judgment.value, 13335);
+    assert.equal(body.data[0].bgp_origin_asn, 13335);
+    assert.equal(body.data[0].rpki_status, 'valid');
+    assert.equal(body.data[0].evidence[0].source, 'ripe-ris');
+    assert.deepEqual(body.data[0].sources, ['ripe-ris']);
     assert.equal(body.meta.resolved_count, 1);
     assert.equal(response.headers.get('x-rate-limit-limit'), '100');
     assert.equal(response.headers.get('x-rate-limit-remaining'), '99');

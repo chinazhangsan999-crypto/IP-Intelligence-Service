@@ -5,7 +5,7 @@
 ## 第一阶段边界
 
 - 本地数据库查询：DB-IP City Lite、DB-IP ASN Lite、IP2Proxy Lite、Tor Exit List、云厂商网段和自定义 ASN 分类规则。
-- 私有批量接口：`POST /v1/ip/lookup`，每次最多 100 个 IP。
+- 私有批量接口：`POST /v1/ip/lookup`，每次最多 100 个 IP；仅返回最终基础画像，ASN 裁决、BGP/RPKI 与来源证据只保留在 IP 系统内部。
 - 每个导航站独立身份与 HMAC 签名；部署时叠加 Cloudflare Access Service Token。
 - 查询失败时，导航站继续正常服务，只显示“识别中”或“未知”。
 

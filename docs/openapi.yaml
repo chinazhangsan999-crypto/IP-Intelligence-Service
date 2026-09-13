@@ -184,8 +184,51 @@ components:
         code: { type: string, const: OK }
         data:
           type: array
-          items: { $ref: '#/components/schemas/LookupItem' }
+          items: { $ref: '#/components/schemas/ClientLookupItem' }
         meta: { $ref: '#/components/schemas/LookupMeta' }
+    ClientLookupItem:
+      type: object
+      description: Final client-facing IP profile. ASN adjudication, BGP/RPKI and source evidence stay internal to the IP system.
+      required: [input, status, message, ip, ip_version, scope, country_code, country_name, region, city, asn, asn_org, isp, network_type, is_mobile, is_hosting, is_proxy, is_vpn, is_tor, is_anycast, confidence]
+      properties:
+        input: { type: string }
+        status: { type: string, enum: [resolved, invalid, unavailable] }
+        message: { type: [string, 'null'] }
+        ip: { type: [string, 'null'] }
+        ip_version: { type: [integer, 'null'], enum: [4, 6, null] }
+        scope: { type: string, enum: [public, private, loopback, link_local, multicast, reserved, unknown] }
+        scope_zh: { type: [string, 'null'] }
+        country_code: { type: [string, 'null'] }
+        country_name: { type: [string, 'null'] }
+        region: { type: [string, 'null'] }
+        city: { type: [string, 'null'] }
+        state1: { type: [string, 'null'] }
+        state2: { type: [string, 'null'] }
+        postcode: { type: [string, 'null'] }
+        latitude: { type: [number, 'null'] }
+        longitude: { type: [number, 'null'] }
+        timezone: { type: [string, 'null'] }
+        asn: { type: [integer, 'null'], minimum: 0 }
+        asn_org: { type: [string, 'null'] }
+        asn_org_zh: { type: [string, 'null'] }
+        isp: { type: [string, 'null'] }
+        network_type: { type: string, enum: [residential, mobile, business, education, government, hosting, cdn, unknown] }
+        network_type_zh: { type: [string, 'null'] }
+        is_mobile: { type: [boolean, 'null'] }
+        is_hosting: { type: [boolean, 'null'] }
+        is_proxy: { type: [boolean, 'null'] }
+        is_vpn: { type: [boolean, 'null'] }
+        is_tor: { type: [boolean, 'null'] }
+        is_anycast: { type: [boolean, 'null'] }
+        special_purpose: { type: [string, 'null'] }
+        is_fullbogon: { type: [boolean, 'null'] }
+        verified_crawler: { type: [boolean, 'null'] }
+        crawler_operator: { type: [string, 'null'] }
+        crawler_type: { type: [string, 'null'] }
+        is_private_relay: { type: [boolean, 'null'] }
+        private_relay_region: { type: [string, 'null'] }
+        confidence: { type: string, enum: [unknown, low, medium, high] }
+        confidence_zh: { type: [string, 'null'] }
     LookupItem:
       type: object
       required: [input, status, message, ip, ip_version, scope, country_code, country_name, region, city, asn, asn_org, isp, network_type, is_mobile, is_hosting, is_proxy, is_vpn, is_tor, is_anycast, confidence, evidence, sources]

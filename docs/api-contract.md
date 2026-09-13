@@ -58,17 +58,6 @@ X-Signature: <64位小写十六进制HMAC-SHA256>
       "is_vpn": null,
       "is_tor": false,
       "is_anycast": null,
-      "bgp_origin_asn": 13335,
-      "bgp_origin_asns": [13335],
-      "bgp_prefix": "1.1.1.0/24",
-      "bgp_conflict": false,
-      "rpki_status": "valid",
-      "rir": "APNIC",
-      "allocation_country": "AU",
-      "allocation_status": "allocated",
-      "allocation_date": "20110811",
-      "rdap_urls": ["https://rdap.apnic.net/"],
-      "asn_rdap_urls": ["https://rdap.apnic.net/"],
       "special_purpose": null,
       "is_fullbogon": false,
       "verified_crawler": false,
@@ -76,19 +65,7 @@ X-Signature: <64位小写十六进制HMAC-SHA256>
       "crawler_type": null,
       "is_private_relay": false,
       "private_relay_region": null,
-      "canonical_org": "Cloudflare, Inc.",
-      "canonical_org_country": "US",
-      "peeringdb_network_type": "Content",
-      "confidence": "high",
-      "evidence": [
-        {
-          "source": "dbip-asn",
-          "field": "asn",
-          "value": "13335",
-          "confidence": "high"
-        }
-      ],
-      "sources": ["dbip-asn", "cloud-ranges"]
+      "confidence": "high"
     }
   ],
   "meta": {
@@ -116,9 +93,9 @@ X-Signature: <64位小写十六进制HMAC-SHA256>
 
 ## 多来源地理字段
 
-查询结果除 `country_code`、`region`、`city`、`asn` 外，还可能包含 `state1`、`state2`、`postcode`、`latitude`、`longitude` 与 `timezone`。`source_claims` 保留每个可用数据库提供的原始字段证据。`country_judgment`、`asn_judgment`、`asn_org_judgment` 与 `network_judgment` 说明自动裁决依据、独立来源支持数和备选结果：高可信证据优先；没有高可信证据时按独立来源多数选择；平票或高可信冲突按固定优先级稳定选择，同时保留 `conflicted`、`alternatives` 和降级后的置信度。
+查询结果除 `country_code`、`region`、`city`、`asn` 外，还可能包含 `state1`、`state2`、`postcode`、`latitude`、`longitude` 与 `timezone`。正式客户端接口只返回自动裁决后的最终基础画像；原始 `source_claims`、`evidence`、候选结果、支持票数和所有 `*_judgment` 对象均属于 IP 系统内部数据，不向导航站或其他 API 客户端返回。
 
-面向中文界面的字段包括 `scope_zh`、`network_type_zh`、`confidence_zh`、`rpki_status_zh`、`allocation_country_name`、`asn_org_zh`、`asn_judgment_zh` 与 `network_judgment_zh`。英文/代码字段继续保留，旧调用方无需修改。
+面向客户端中文界面的字段包括 `scope_zh`、`network_type_zh`、`confidence_zh` 与 `asn_org_zh`。英文/代码字段继续保留。
 
 每批必须满足：`unique_count = resolved_count + invalid_count + unavailable_count`。
 
@@ -136,19 +113,14 @@ X-Signature: <64位小写十六进制HMAC-SHA256>
 
 `confidence`：`unknown`、`low`、`medium`、`high`。它表示证据充分程度，不表示 IP 安全等级。
 
-## 路由、注册和网络身份字段
+## 内部裁决边界与客户端网络身份字段
 
-- `bgp_origin_asn`、`bgp_origin_asns`、`bgp_prefix`：RIPE RIS 当前路由快照；多源 Origin 时单值字段保持 `null`。
-- `bgp_conflict`：数据库 ASN 是否与当前 BGP Origin 明确冲突；数据库 ASN 缺失时保持 `null`。
-- `rpki_status`：`valid`、`invalid_asn`、`invalid_length`、`mixed`、`not_found` 或 `null`。它只说明路由授权，不表示访客安全性。
-- `rir`、`allocation_*`：NRO/RIR 注册资源证据，不等于访客实际所在地。
-- `rdap_urls`、`asn_rdap_urls`：IANA Bootstrap 对应的 IP 与 ASN 权威 RDAP 服务，只返回安全的 HTTPS 地址；正式查询不会同步调用这些地址。
+- ASN 多源裁决、BGP、RPKI、RIR/RDAP、CAIDA、PeeringDB、候选值、冲突和来源证据只供 IP 系统自身页面及内部诊断使用，不属于 `/v1/ip/lookup` 客户端响应。
+- 客户端仍可获得裁决完成后的 `asn`、`asn_org`、`asn_org_zh`、`isp` 与 `network_type` 基础画像，但无法反查裁决过程。
 - `special_purpose`：IANA 特殊用途名称。
 - `is_fullbogon`：Team Cymru 快照命中；只能作为辅助证据。
 - `verified_crawler`、`crawler_operator`、`crawler_type`：Google/Bing 官方网段匹配结果，不依据 User-Agent 猜测。
 - `is_private_relay`、`private_relay_region`：Apple 官方 Private Relay 出口及其声明地区，不等于恶意代理或 VPN。
-- `canonical_org`、`canonical_org_country`：CAIDA AS2Org 统一组织。
-- `peeringdb_network_type`：PeeringDB 的网络自报类型，只作为中置信度辅助信息。
 
 ## 三态规则
 
