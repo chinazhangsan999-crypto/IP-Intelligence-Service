@@ -5,133 +5,183 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="color-scheme" content="dark">
   <meta name="theme-color" content="#070a12">
-  <meta name="description" content="查询 IPv4、IPv6 的地理位置、ASN、网络类型与代理风险信号。">
+  <meta name="description" content="查询 IPv4、IPv6 的地理位置、ASN、网络类型、路由注册与代理风险信号。">
   <title>IP Intelligence · 网络身份查询</title>
   <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='16' fill='%23080b14'/%3E%3Cpath fill='%2338bdf8' d='M32 8 52 18v14c0 12.3-8.5 21.2-20 24-11.5-2.8-20-11.7-20-24V18L32 8Zm0 10-10 5v9c0 6.3 3.8 11.2 10 13.7 6.2-2.5 10-7.4 10-13.7v-9l-10-5Z'/%3E%3C/svg%3E">
-  <link rel="stylesheet" href="/app.css">
-  <script src="/app.js" defer></script>
+  <link rel="stylesheet" href="/app.css?v=20260914-bilingual">
+  <script src="/app.js?v=20260914-bilingual" defer></script>
 </head>
 <body>
-  <a class="skip-link" href="#main-content">跳到主要内容</a>
+  <a class="skip-link" href="#main-content" data-i18n="skipLink">跳到主要内容</a>
   <div class="ambient ambient-one" aria-hidden="true"></div>
   <div class="ambient ambient-two" aria-hidden="true"></div>
 
   <header class="site-header">
-    <a class="brand" href="/" aria-label="IP Intelligence 首页">
+    <a class="brand" href="/" id="brand-link" aria-label="IP Intelligence 首页">
       <span class="brand-mark" aria-hidden="true">
         <svg viewBox="0 0 24 24"><path d="M12 2 20 6v6c0 5.1-3.4 8.7-8 10-4.6-1.3-8-4.9-8-10V6l8-4Zm0 4.2L8 8v4c0 2.9 1.6 5 4 6.1 2.4-1.1 4-3.2 4-6.1V8l-4-1.8Z"/></svg>
       </span>
       <span><strong>IP Intelligence</strong><small>NETWORK SIGNALS</small></span>
     </a>
-    <div class="header-meta" aria-label="服务说明">
-      <span class="live-dot" aria-hidden="true"></span>
-      <span>本地数据库 · 不保存查询历史</span>
+    <div class="header-actions">
+      <div class="header-meta" aria-label="服务说明" id="service-note">
+        <span class="live-dot" aria-hidden="true"></span>
+        <span data-i18n="serviceNote">本地数据库 · 不保存查询历史</span>
+      </div>
+      <div class="language-switch" role="group" aria-label="语言 / Language">
+        <button type="button" data-language="zh" aria-pressed="true">中文</button>
+        <button type="button" data-language="en" aria-pressed="false">EN</button>
+      </div>
     </div>
   </header>
 
   <main id="main-content">
     <section class="hero" aria-labelledby="hero-title">
-      <p class="eyebrow"><span></span> IP SIGNAL EXPLORER</p>
-      <h1 id="hero-title">看清一个 IP 的<br><em>网络身份</em></h1>
-      <p class="hero-copy">查询地理归属、ASN、运营商与网络类型，并区分“未命中”和“暂无数据”。结果来自本地数据库，不把未知信号包装成安全结论。</p>
+      <p class="eyebrow"><span aria-hidden="true"></span><span data-i18n="eyebrow">IP 网络信息查询</span></p>
+      <h1 id="hero-title" data-i18n-html="heroTitle">看清一个 IP 的<br><em>网络身份</em></h1>
+      <p class="hero-copy" data-i18n="heroCopy">查询地理归属、运营商、网络类型与路由信息。每个结论都区分“明确未命中”和“当前没有足够数据”。</p>
 
       <form class="lookup-form" id="lookup-form" novalidate>
-        <label for="ip-input">IPv4 或 IPv6 地址</label>
+        <label for="ip-input" data-i18n="inputLabel">IPv4 或 IPv6 地址</label>
         <div class="search-row">
           <span class="search-icon" aria-hidden="true">
             <svg viewBox="0 0 24 24"><path d="m21 20-4.7-4.7a7.5 7.5 0 1 0-1.4 1.4L19.6 21 21 20ZM5 11a5.5 5.5 0 1 1 11 0 5.5 5.5 0 0 1-11 0Z"/></svg>
           </span>
-          <input id="ip-input" name="ip" type="text" inputmode="text" autocomplete="off" spellcheck="false" maxlength="64" placeholder="例如 1.1.1.1 或 2606:4700:4700::1111…" aria-describedby="input-help input-error">
+          <input id="ip-input" name="ip" type="text" inputmode="text" autocomplete="off" spellcheck="false" maxlength="64" placeholder="例如 1.1.1.1 或 2606:4700:4700::1111…" data-i18n-placeholder="inputPlaceholder" aria-describedby="input-help input-error">
           <button id="lookup-button" type="submit">
-            <span>开始查询</span>
+            <span data-i18n="lookupButton">开始查询</span>
             <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 11h11.2l-4.6-4.6L13 5l7 7-7 7-1.4-1.4 4.6-4.6H5v-2Z"/></svg>
           </button>
         </div>
         <div class="form-foot">
-          <p id="input-help">留空可检测当前访问地址；仅支持 IP，不对域名进行 DNS 解析。</p>
-          <button class="text-action" id="detect-self" type="button">检测当前地址</button>
+          <p id="input-help" data-i18n="inputHelp">留空可检测当前访问地址；仅支持 IP，不解析域名。</p>
+          <button class="text-action" id="detect-self" type="button" data-i18n="detectSelf">检测当前地址</button>
         </div>
         <p class="field-error" id="input-error" role="alert" hidden></p>
       </form>
 
-      <ul class="trust-list" aria-label="查询能力">
-        <li><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m9 16.2-3.5-3.5 1.4-1.4 2.1 2.1 7.7-7.7 1.4 1.4-9.1 9.1Z"/></svg>IPv4 / IPv6</li>
-        <li><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m9 16.2-3.5-3.5 1.4-1.4 2.1 2.1 7.7-7.7 1.4 1.4-9.1 9.1Z"/></svg>本地数据查询</li>
-        <li><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m9 16.2-3.5-3.5 1.4-1.4 2.1 2.1 7.7-7.7 1.4 1.4-9.1 9.1Z"/></svg>三态风险结果</li>
+      <ul class="trust-list" aria-label="查询能力" id="capability-list">
+        <li><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m9 16.2-3.5-3.5 1.4-1.4 2.1 2.1 7.7-7.7 1.4 1.4-9.1 9.1Z"/></svg><span data-i18n="capabilityIp">IPv4 与 IPv6</span></li>
+        <li><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m9 16.2-3.5-3.5 1.4-1.4 2.1 2.1 7.7-7.7 1.4 1.4-9.1 9.1Z"/></svg><span data-i18n="capabilityLocal">本地数据库查询</span></li>
+        <li><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m9 16.2-3.5-3.5 1.4-1.4 2.1 2.1 7.7-7.7 1.4 1.4-9.1 9.1Z"/></svg><span data-i18n="capabilityExplain">结果可解释</span></li>
       </ul>
     </section>
 
     <section class="result-shell" id="result-shell" aria-live="polite" aria-busy="true">
       <div class="result-loading" id="result-loading">
         <div class="scan-orbit" aria-hidden="true"><span></span></div>
-        <strong>正在识别当前网络地址</strong>
-        <p>读取地理、ASN 与网络风险信号…</p>
+        <strong data-i18n="loadingTitle">正在识别当前网络地址</strong>
+        <p data-i18n="loadingCopy">正在读取地理位置、运营商、路由与网络信号…</p>
       </div>
 
       <div class="result-error" id="result-error" role="alert" hidden>
         <span class="error-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M11 7h2v6h-2V7Zm0 8h2v2h-2v-2Zm1-13 11 20H1L12 2Zm0 4L4.4 20h15.2L12 6Z"/></svg></span>
         <div><strong id="error-title">查询暂时不可用</strong><p id="error-message"></p></div>
-        <button id="retry-button" type="button">重新尝试</button>
+        <button id="retry-button" type="button" data-i18n="retryButton">重新尝试</button>
       </div>
 
       <div class="result-content" id="result-content" hidden>
         <article class="identity-card">
           <div class="identity-top">
-            <div>
+            <div class="identity-primary">
               <div class="identity-label"><span id="ip-version">IPv4</span><span id="scope-label">公网地址</span></div>
               <div class="ip-line"><h2 id="result-ip">--</h2><button class="icon-button" id="copy-ip" type="button" aria-label="复制 IP 地址"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M8 7V3h13v13h-4v5H3V7h5Zm2 0h7v7h2V5h-9v2Zm5 2H5v10h10V9Z"/></svg></button></div>
               <p id="generated-at">查询时间 --</p>
             </div>
-            <div class="confidence-block"><span>结论置信度</span><strong id="confidence-value">--</strong><small id="source-count">0 个数据源</small></div>
+            <div class="confidence-block"><span data-i18n="confidenceLabel">结论置信度</span><strong id="confidence-value">--</strong><small id="source-count">0 个数据源</small></div>
           </div>
+          <div class="plain-summary" id="plain-summary" role="status"></div>
           <p class="location-alert" id="location-alert" role="status" hidden></p>
           <div class="judgment-alert" id="judgment-alert" role="status" hidden>
-            <strong id="judgment-title">自动裁决结果</strong>
+            <strong id="judgment-title">ASN 存在来源争议</strong>
             <span id="judgment-summary"></span>
             <small id="judgment-alternatives"></small>
           </div>
           <dl class="identity-grid extended">
-            <div><dt>国家 / 地区</dt><dd id="location-country">--</dd><small id="location-detail">--</small></div>
+            <div><dt data-i18n="countryRegion">国家与地区</dt><dd id="location-country">--</dd><small id="location-detail">--</small></div>
             <div><dt>ASN</dt><dd id="asn-value">--</dd><small id="asn-org">--</small></div>
-            <div><dt>网络类型</dt><dd id="network-type">--</dd><small id="network-note">综合规则判断</small></div>
-            <div><dt>运营商 / ISP</dt><dd id="isp-value">--</dd><small>若数据源提供</small></div>
-            <div><dt>邮编 / 时区</dt><dd id="timezone-value">--</dd><small id="postcode-value">--</small></div>
-            <div><dt>经纬度</dt><dd id="coordinates-value">--</dd><small>数据库定位中心点，并非设备位置</small></div>
+            <div><dt data-i18n="networkType">网络类型</dt><dd id="network-type">--</dd><small id="network-note">--</small></div>
+            <div><dt data-i18n="ispLabel">运营商</dt><dd id="isp-value">--</dd><small data-i18n="whenAvailable">数据源提供时显示</small></div>
+            <div><dt data-i18n="postcodeTimezone">邮编与时区</dt><dd id="timezone-value">--</dd><small id="postcode-value">--</small></div>
+            <div><dt data-i18n="coordinates">经纬度</dt><dd id="coordinates-value">--</dd><small data-i18n="coordinatesHelp">数据库定位中心点，不是设备位置</small></div>
           </dl>
         </article>
 
-        <div class="result-grid">
-          <article class="panel risk-panel">
-            <div class="panel-heading"><div><p class="section-kicker">SIGNALS</p><h2>网络信号</h2></div><span class="panel-note">命中 ≠ 恶意</span></div>
-            <p class="panel-copy">这些字段描述网络出口属性，只作为判断依据。灰色“暂无数据”不等于未命中。</p>
-            <div class="signal-grid" id="signal-grid"></div>
-          </article>
-
-          <article class="panel evidence-panel">
-            <div class="panel-heading"><div><p class="section-kicker">EVIDENCE</p><h2>判断证据</h2></div><span class="count-pill" id="evidence-count">0 条</span></div>
-            <div class="evidence-list" id="evidence-list"></div>
-          </article>
-        </div>
-
-        <article class="panel coverage-panel">
-          <div class="panel-heading"><div><p class="section-kicker">COVERAGE</p><h2>数据覆盖</h2></div><span class="panel-note">查询结果不会持久化</span></div>
-          <div class="source-list" id="source-list"></div>
-          <p class="coverage-help">数据源未提供的字段统一显示“暂无数据”。本系统不会仅凭网络类型自动判断访客好坏，也不会生成缺乏数据依据的纯净度分数。</p>
+        <article class="panel facts-panel" aria-labelledby="facts-title">
+          <div class="panel-heading">
+            <div><p class="section-kicker" data-i18n="factsKicker">路由与登记资料</p><h2 id="facts-title" data-i18n="factsTitle">这个地址由谁管理、如何接入互联网</h2></div>
+            <span class="panel-note" data-i18n="factsNote">只陈述可验证信息</span>
+          </div>
+          <p class="panel-copy" data-i18n="factsCopy">路由表示互联网当前如何到达这个地址；登记资料表示地址资源由哪个机构分配，两者不代表访客本人位置。</p>
+          <div class="fact-groups">
+            <section class="fact-group" aria-labelledby="route-title">
+              <h3 id="route-title" data-i18n="routeTitle">网络路由</h3>
+              <dl class="fact-list">
+                <div><dt data-i18n="bgpPrefix">当前路由前缀</dt><dd id="bgp-prefix">--</dd></div>
+                <div><dt data-i18n="originAsn">路由来源 ASN</dt><dd id="bgp-origin">--</dd></div>
+                <div><dt data-i18n="rpkiStatus">路由授权状态</dt><dd id="rpki-status">--</dd></div>
+                <div><dt data-i18n="routeConsistency">ASN 一致性</dt><dd id="bgp-consistency">--</dd></div>
+              </dl>
+            </section>
+            <section class="fact-group" aria-labelledby="registration-title">
+              <h3 id="registration-title" data-i18n="registrationTitle">地址登记</h3>
+              <dl class="fact-list">
+                <div><dt data-i18n="registry">登记机构</dt><dd id="rir-value">--</dd></div>
+                <div><dt data-i18n="allocationCountry">资源登记国家</dt><dd id="allocation-country">--</dd></div>
+                <div><dt data-i18n="allocationStatus">分配状态与日期</dt><dd id="allocation-status">--</dd></div>
+                <div><dt data-i18n="locationConsistency">登记地与定位</dt><dd id="location-consistency">--</dd></div>
+              </dl>
+              <div class="fact-links" id="rdap-links"></div>
+            </section>
+            <section class="fact-group" aria-labelledby="organization-title">
+              <h3 id="organization-title" data-i18n="organizationTitle">运营组织</h3>
+              <dl class="fact-list">
+                <div><dt data-i18n="canonicalOrg">统一组织名称</dt><dd id="canonical-org">--</dd></div>
+                <div><dt data-i18n="orgCountry">组织登记国家</dt><dd id="canonical-country">--</dd></div>
+                <div><dt data-i18n="peeringType">网络自报类型</dt><dd id="peering-type">--</dd></div>
+                <div><dt data-i18n="identityNote">特殊网络身份</dt><dd id="special-identity">--</dd></div>
+              </dl>
+            </section>
+          </div>
         </article>
+
+        <article class="panel risk-panel">
+          <div class="panel-heading"><div><p class="section-kicker" data-i18n="signalsKicker">网络属性</p><h2 data-i18n="signalsTitle">可能影响使用场景的信号</h2></div><span class="panel-note" data-i18n="signalsNote">命中不等于恶意</span></div>
+          <p class="panel-copy" data-i18n="signalsCopy">黄色表示数据源明确命中，绿色表示明确未命中，灰色表示当前没有足够数据。网络类型不能单独用来判断访客好坏。</p>
+          <div class="signal-grid" id="signal-grid"></div>
+        </article>
+
+        <details class="technical-disclosure panel" id="technical-details">
+          <summary>
+            <span><strong data-i18n="technicalTitle">查看技术依据与数据来源</strong><small data-i18n="technicalCopy">适合需要核对数据库结论的用户</small></span>
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m7 10 5 5 5-5H7Z"/></svg>
+          </summary>
+          <div class="technical-content">
+            <section class="technical-section" aria-labelledby="evidence-title">
+              <div class="panel-heading"><div><p class="section-kicker" data-i18n="evidenceKicker">判断依据</p><h2 id="evidence-title" data-i18n="evidenceTitle">数据源返回了什么</h2></div><span class="count-pill" id="evidence-count">0 条</span></div>
+              <div class="evidence-list" id="evidence-list"></div>
+            </section>
+            <section class="technical-section" aria-labelledby="coverage-title">
+              <div class="panel-heading"><div><p class="section-kicker" data-i18n="coverageKicker">数据覆盖</p><h2 id="coverage-title" data-i18n="coverageTitle">本次实际使用的数据源</h2></div><span class="panel-note" data-i18n="notStored">不保存查询结果</span></div>
+              <div class="source-list" id="source-list"></div>
+              <p class="coverage-help" data-i18n="coverageHelp">没有数据时显示“暂无数据”，不会自动改成“未命中”，也不会生成缺乏依据的纯净度分数。</p>
+            </section>
+          </div>
+        </details>
       </div>
     </section>
 
     <section class="explain-section" aria-labelledby="explain-title">
-      <div><p class="section-kicker">HOW TO READ</p><h2 id="explain-title">如何理解查询结果</h2></div>
+      <div><p class="section-kicker" data-i18n="readingKicker">阅读指南</p><h2 id="explain-title" data-i18n="readingTitle">先看结论，再按需查看技术信息</h2></div>
       <div class="explain-grid">
-        <article><span>01</span><h3>网络身份</h3><p>地理位置、ASN 与 ISP 说明地址由谁管理、从哪里接入，不代表使用者本人身份。</p></article>
-        <article><span>02</span><h3>网络类型</h3><p>住宅、移动、企业或托管网络是一种出口分类，应与访问行为共同判断。</p></article>
-        <article><span>03</span><h3>风险三态</h3><p>“未命中”表示数据源明确给出否；“暂无数据”表示当前免费库无法判断。</p></article>
+        <article><span>01</span><h3 data-i18n="guideIdentityTitle">网络身份</h3><p data-i18n="guideIdentityCopy">地理位置、ASN与运营商说明地址由谁管理，不代表使用者本人身份。</p></article>
+        <article><span>02</span><h3 data-i18n="guideRouteTitle">路由与登记</h3><p data-i18n="guideRouteCopy">BGP、RPKI和RIR资料帮助判断网络路由与资源登记是否一致。</p></article>
+        <article><span>03</span><h3 data-i18n="guideStateTitle">三态结果</h3><p data-i18n="guideStateCopy">“未命中”有明确证据；“暂无数据”只是当前数据库不能判断。</p></article>
       </div>
     </section>
   </main>
 
-  <footer><span>IP Intelligence Service</span><span>本地数据 · 最小留存 · 结果可解释</span></footer>
+  <footer><span>IP Intelligence Service</span><span data-i18n="footerCopy">本地数据 · 最小留存 · 结果可解释</span></footer>
   <div class="toast" id="toast" role="status" aria-live="polite" hidden></div>
 </body>
 </html>
