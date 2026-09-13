@@ -10,6 +10,7 @@ import { AdminAuthRepository } from './repositories/AdminAuthRepository.js';
 import { CloudRangeProvider } from './providers/CloudRangeProvider.js';
 import { Ip2ProxyProvider } from './providers/Ip2ProxyProvider.js';
 import { MmdbProvider } from './providers/MmdbProvider.js';
+import { NetworkEvidenceProvider } from './providers/NetworkEvidenceProvider.js';
 import { TorExitProvider } from './providers/TorExitProvider.js';
 import { ApiClientService } from './services/ApiClientService.js';
 import { ClassificationRuleService } from './services/ClassificationRuleService.js';
@@ -26,6 +27,7 @@ import { createLogger } from './utils/logger.js';
 import { MetricsRegistry } from './observability/MetricsRegistry.js';
 import { loadAdminAssets } from './admin/loadAdminAssets.js';
 import { loadPublicAssets } from './public/loadPublicAssets.js';
+import { DATA_SOURCE_UNITS } from './data/dataSourceCatalog.js';
 
 async function start() {
   const config = loadConfig();
@@ -43,7 +45,7 @@ async function start() {
     })));
   }
 
-  const [cityProvider, asnProvider, cloudProvider, torProvider, proxyProvider, ruleService, supplementalProviders] = await Promise.all([
+  const [cityProvider, asnProvider, cloudProvider, torProvider, proxyProvider, networkEvidenceProvider, ruleService, supplementalProviders, maxmindCountryProvider, maxmindCityProvider, maxmindAsnProvider, ipgeoCommunityProvider] = await Promise.all([
     MmdbProvider.load({
       id: 'dbip-city',
       filePath: config.ipData.cityPath,
@@ -54,11 +56,16 @@ async function start() {
       filePath: config.ipData.asnPath,
       cacheSize: config.ipData.cacheSize,
     }),
-    CloudRangeProvider.load(config.ipData.cloudRangesPath),
+    CloudRangeProvider.load(config.ipData.cloudRangePaths),
     TorExitProvider.load(config.ipData.torExitPath),
     Ip2ProxyProvider.load(config.ipData.ip2ProxyPath),
+    NetworkEvidenceProvider.load(config.dataDir),
     ClassificationRuleService.load(config.ipData.classificationRulesPath),
     loadSupplementalProviders(),
+    MmdbProvider.load({ id: 'maxmind-geolite2-country', required: false, filePath: config.ipData.maxmindCountryPath, cacheSize: config.ipData.cacheSize }),
+    MmdbProvider.load({ id: 'maxmind-geolite2-city', required: false, filePath: config.ipData.maxmindCityPath, cacheSize: config.ipData.cacheSize }),
+    MmdbProvider.load({ id: 'maxmind-geolite2-asn', required: false, filePath: config.ipData.maxmindAsnPath, cacheSize: config.ipData.cacheSize }),
+    MmdbProvider.load({ id: 'ipgeo-community-mmdb', required: false, filePath: config.ipData.ipgeoCommunityPath, cacheSize: config.ipData.cacheSize }),
   ]);
   const supplementalById = (providers) => new Map(providers.map((provider) => [provider.id, provider]));
   const supplementalFor = (providers, ids) => {
@@ -71,8 +78,13 @@ async function start() {
     cloudProvider,
     torProvider,
     proxyProvider,
+    networkEvidenceProvider,
     ruleService,
     ...supplementalProviders,
+    maxmindCountryProvider,
+    maxmindCityProvider,
+    maxmindAsnProvider,
+    ipgeoCommunityProvider,
   ];
   const baseClassificationRules = [...ruleService.rules];
   const readiness = createReadiness([
@@ -80,20 +92,22 @@ async function start() {
     ...intelligenceSources.map((provider) => provider.publicState()),
   ]);
   const lookupService = new ReloadableLookupService(new IpLookupService({
-    cityProvider,
-    asnProvider,
-    countryProviders: supplementalFor(supplementalProviders, [
+    cityProvider: maxmindCityProvider.publicState().ready ? maxmindCityProvider : cityProvider,
+    asnProvider: maxmindAsnProvider.publicState().ready ? maxmindAsnProvider : asnProvider,
+    countryProviders: [maxmindCountryProvider, ...supplementalFor(supplementalProviders, [
       'sapics-user-country', 'sapics-server-country', 'sapics-geolite2-country',
       'sapics-dbip-country', 'sapics-iptoasn-country',
-    ]),
-    cityFallbackProviders: supplementalFor(supplementalProviders, [
+    ])],
+    cityFallbackProviders: [cityProvider, ipgeoCommunityProvider, ...supplementalFor(supplementalProviders, [
       'sapics-geolite2-city-ipv4', 'sapics-geolite2-city-ipv6',
-    ]),
+    ])],
     asnProviders: [
       ...supplementalFor(supplementalProviders, [
         'sapics-origin-asn', 'sapics-iptoasn-asn',
       ]),
+      maxmindAsnProvider,
       asnProvider,
+      ipgeoCommunityProvider,
       ...supplementalFor(supplementalProviders, [
         'sapics-geolite2-asn', 'sapics-dbip-asn',
       ]),
@@ -102,6 +116,7 @@ async function start() {
       cloudProvider,
       torProvider,
       proxyProvider,
+      networkEvidenceProvider,
       ruleService,
     }),
   }));
@@ -110,7 +125,12 @@ async function start() {
   let activeCloudProvider = cloudProvider;
   let activeTorProvider = torProvider;
   let activeProxyProvider = proxyProvider;
+  let activeNetworkEvidenceProvider = networkEvidenceProvider;
   let activeSupplementalProviders = supplementalProviders;
+  let activeMaxmindCountryProvider = maxmindCountryProvider;
+  let activeMaxmindCityProvider = maxmindCityProvider;
+  let activeMaxmindAsnProvider = maxmindAsnProvider;
+  let activeIpgeoCommunityProvider = ipgeoCommunityProvider;
   const pool = createPostgresPool(config.database, logger);
   let authenticator = null;
   let managementRepository = null;
@@ -125,6 +145,19 @@ async function start() {
       const clientRepository = new ApiClientRepository(pool);
       apiClientService = new ApiClientService(clientRepository, config.clientSecretMasterKey);
       managementRepository = new ManagementRepository(pool);
+      await managementRepository.ensureDataSourceConfigs(DATA_SOURCE_UNITS.map((unit) => ({
+        sourceId: unit.id,
+        displayName: unit.displayName,
+        enabled: unit.defaultEnabled,
+        autoUpdateEnabled: unit.id === 'ip2proxy'
+          ? config.ipData.ip2ProxyAutoUpdateEnabled
+          : unit.id === 'sapics'
+            ? config.ipData.sapicsAutoUpdateEnabled
+            : unit.defaultAutoUpdate,
+        intervalHours: unit.id === 'ip2proxy'
+          ? Math.max(1, Math.round(config.ipData.ip2ProxyUpdateIntervalMs / 3_600_000))
+          : unit.defaultIntervalHours,
+      })));
       const adminAuthRepository = new AdminAuthRepository(pool);
       adminAuthService = new AdminAuthService(adminAuthRepository);
       const databaseRules = await managementRepository.listEnabledClassificationRules();
@@ -165,7 +198,7 @@ async function start() {
   }
 
   async function reloadFileSources(updateResults = {}) {
-    const [nextCity, nextAsn, nextCloud, nextTor, nextProxy, nextSupplementalProviders] = await Promise.all([
+    const [nextCity, nextAsn, nextCloud, nextTor, nextProxy, nextNetworkEvidence, nextSupplementalProviders, nextMaxmindCountry, nextMaxmindCity, nextMaxmindAsn, nextIpgeoCommunity] = await Promise.all([
       MmdbProvider.load({
         id: 'dbip-city',
         filePath: config.ipData.cityPath,
@@ -176,10 +209,15 @@ async function start() {
         filePath: config.ipData.asnPath,
         cacheSize: config.ipData.cacheSize,
       }),
-      CloudRangeProvider.load(config.ipData.cloudRangesPath),
+      CloudRangeProvider.load(config.ipData.cloudRangePaths),
       TorExitProvider.load(config.ipData.torExitPath),
       Ip2ProxyProvider.load(config.ipData.ip2ProxyPath),
+      NetworkEvidenceProvider.load(config.dataDir),
       loadSupplementalProviders(),
+      MmdbProvider.load({ id: 'maxmind-geolite2-country', required: false, filePath: config.ipData.maxmindCountryPath, cacheSize: config.ipData.cacheSize }),
+      MmdbProvider.load({ id: 'maxmind-geolite2-city', required: false, filePath: config.ipData.maxmindCityPath, cacheSize: config.ipData.cacheSize }),
+      MmdbProvider.load({ id: 'maxmind-geolite2-asn', required: false, filePath: config.ipData.maxmindAsnPath, cacheSize: config.ipData.cacheSize }),
+      MmdbProvider.load({ id: 'ipgeo-community-mmdb', required: false, filePath: config.ipData.ipgeoCommunityPath, cacheSize: config.ipData.cacheSize }),
     ]);
     if (!nextCity.publicState().ready || !nextAsn.publicState().ready) {
       throw new Error('Updated required IP databases failed reload validation');
@@ -190,26 +228,35 @@ async function start() {
     if (nextTor.publicState().ready || !activeTorProvider.publicState().ready) activeTorProvider = nextTor;
     const previousProxyProvider = activeProxyProvider;
     if (nextProxy.publicState().ready || !activeProxyProvider.publicState().ready) activeProxyProvider = nextProxy;
+    if (nextNetworkEvidence.publicState().ready || !activeNetworkEvidenceProvider.publicState().ready) {
+      activeNetworkEvidenceProvider = nextNetworkEvidence;
+    }
     activeSupplementalProviders = nextSupplementalProviders.map((provider, index) => (
       provider.publicState().ready || !activeSupplementalProviders[index]?.publicState().ready
         ? provider
         : activeSupplementalProviders[index]
     ));
+    if (nextMaxmindCountry.publicState().ready || !activeMaxmindCountryProvider.publicState().ready) activeMaxmindCountryProvider = nextMaxmindCountry;
+    if (nextMaxmindCity.publicState().ready || !activeMaxmindCityProvider.publicState().ready) activeMaxmindCityProvider = nextMaxmindCity;
+    if (nextMaxmindAsn.publicState().ready || !activeMaxmindAsnProvider.publicState().ready) activeMaxmindAsnProvider = nextMaxmindAsn;
+    if (nextIpgeoCommunity.publicState().ready || !activeIpgeoCommunityProvider.publicState().ready) activeIpgeoCommunityProvider = nextIpgeoCommunity;
     lookupService.swap(new IpLookupService({
-      cityProvider: activeCityProvider,
-      asnProvider: activeAsnProvider,
-      countryProviders: supplementalFor(activeSupplementalProviders, [
+      cityProvider: activeMaxmindCityProvider.publicState().ready ? activeMaxmindCityProvider : activeCityProvider,
+      asnProvider: activeMaxmindAsnProvider.publicState().ready ? activeMaxmindAsnProvider : activeAsnProvider,
+      countryProviders: [activeMaxmindCountryProvider, ...supplementalFor(activeSupplementalProviders, [
         'sapics-user-country', 'sapics-server-country', 'sapics-geolite2-country',
         'sapics-dbip-country', 'sapics-iptoasn-country',
-      ]),
-      cityFallbackProviders: supplementalFor(activeSupplementalProviders, [
+      ])],
+      cityFallbackProviders: [activeCityProvider, activeIpgeoCommunityProvider, ...supplementalFor(activeSupplementalProviders, [
         'sapics-geolite2-city-ipv4', 'sapics-geolite2-city-ipv6',
-      ]),
+      ])],
       asnProviders: [
         ...supplementalFor(activeSupplementalProviders, [
           'sapics-origin-asn', 'sapics-iptoasn-asn',
         ]),
+        activeMaxmindAsnProvider,
         activeAsnProvider,
+        activeIpgeoCommunityProvider,
         ...supplementalFor(activeSupplementalProviders, [
           'sapics-geolite2-asn', 'sapics-dbip-asn',
         ]),
@@ -218,6 +265,7 @@ async function start() {
         cloudProvider: activeCloudProvider,
         torProvider: activeTorProvider,
         proxyProvider: activeProxyProvider,
+        networkEvidenceProvider: activeNetworkEvidenceProvider,
         ruleService,
       }),
     }));
@@ -227,7 +275,10 @@ async function start() {
       activeCloudProvider.publicState(),
       activeTorProvider.publicState(),
       activeProxyProvider.publicState(),
+      activeNetworkEvidenceProvider.publicState(),
       ...activeSupplementalProviders.map((provider) => provider.publicState()),
+      activeMaxmindCountryProvider.publicState(), activeMaxmindCityProvider.publicState(),
+      activeMaxmindAsnProvider.publicState(), activeIpgeoCommunityProvider.publicState(),
     ];
     const dbipSources = updateResults.dbip?.result?.sources || [];
     const checksumById = {
@@ -263,11 +314,36 @@ async function start() {
     intervalMs: config.ipData.updateIntervalMs,
     startupDelayMs: config.ipData.updateStartupDelayMs,
     cwd: process.cwd(),
+    dataDir: config.dataDir,
     logger,
     repository: managementRepository,
     reloadSources: reloadFileSources,
     ip2ProxyAutoUpdateEnabled: config.ipData.ip2ProxyAutoUpdateEnabled,
     sapicsAutoUpdateEnabled: config.ipData.sapicsAutoUpdateEnabled,
+    validateSources: async () => {
+      const sampleIps = ['1.1.1.1', '8.8.8.8', '9.9.9.9', '208.67.222.222'];
+      const result = lookupService.lookupBatch(sampleIps);
+      const samples = result.data.map((item) => ({
+        ip: item.ip,
+        status: item.status,
+        country_code: item.country_code,
+        asn: item.asn,
+        sources: item.sources,
+      }));
+      return {
+        passed: samples.every((item) => item.status === 'resolved' && item.country_code && item.asn),
+        resolved_count: result.meta.resolved_count,
+        sample_count: samples.length,
+        samples,
+      };
+    },
+    credentialProvider: async (sourceId) => {
+      if (!managementRepository) return {};
+      const credentials = await managementRepository.getSourceCredentials(sourceId, config.clientSecretMasterKey);
+      if (sourceId === 'github-meta') return credentials.github_token ? { GITHUB_META_TOKEN: credentials.github_token } : {};
+      if (sourceId === 'maxmind-geolite2') return { MAXMIND_ACCOUNT_ID: credentials.account_id || '', MAXMIND_LICENSE_KEY: credentials.license_key || '' };
+      return {};
+    },
     metrics,
   });
 

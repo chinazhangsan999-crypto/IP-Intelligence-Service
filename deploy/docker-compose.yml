@@ -1,6 +1,14 @@
 version: "2.4"
 
 services:
+  routinator:
+    image: nlnetlabs/routinator:v0.15.2
+    restart: unless-stopped
+    volumes:
+      - rpki_cache:/home/routinator/.rpki-cache
+    networks:
+      - backend
+
   postgres:
     image: postgres:16-alpine
     restart: unless-stopped
@@ -39,6 +47,9 @@ services:
       IP2PROXY_UPDATE_INTERVAL_DAYS: ${IP2PROXY_UPDATE_INTERVAL_DAYS:-7}
       SAPICS_AUTO_UPDATE_ENABLED: ${SAPICS_AUTO_UPDATE_ENABLED:-1}
       SAPICS_UPDATE_HOUR_BJT: ${SAPICS_UPDATE_HOUR_BJT:-8}
+      CAIDA_AUA_ACCEPTED: "1"
+      PEERINGDB_AUP_ACCEPTED: "1"
+      ROUTINATOR_URL: http://routinator:8323/json
       DATABASE_URL: postgresql://ip_service:${POSTGRES_PASSWORD}@postgres:5432/ip_intelligence
       DATABASE_SSL_MODE: disable
       DATABASE_POOL_MAX: "10"
@@ -53,6 +64,8 @@ services:
     depends_on:
       postgres:
         condition: service_healthy
+      routinator:
+        condition: service_started
     healthcheck:
       test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:3101/health').then(r=>{if(!r.ok)process.exit(1)}).catch(()=>process.exit(1))"]
       interval: 10s
@@ -84,3 +97,4 @@ volumes:
   postgres_data:
   caddy_data:
   caddy_config:
+  rpki_cache:

@@ -235,6 +235,75 @@ test('admin management endpoints require session and CSRF and never list stored 
   });
 });
 
+test('admin data-source endpoints expose safe metadata and start scoped updates', async () => {
+  const readiness = createReadiness([{ id: 'dbip-city', required: true, ready: true }]);
+  const cookie = `ip_admin_session=${'s'.repeat(64)}`;
+  const calls = [];
+  const adminAuthService = {
+    async authenticate(token) { return token === 's'.repeat(64) ? { admin_user_id: 1, username: 'admin' } : null; },
+    verifyCsrf(_session, token) { return token === 'csrf-value'; },
+  };
+  const managementRepository = {
+    async updateDataSourceConfig(sourceId, config) { return { source_id: sourceId, ...config }; },
+    async recordAudit() {},
+  };
+  const updateScheduler = {
+    snapshot() { return { running: false }; },
+    async forceDownloadPreflight() {
+      return { enabled_group_count: 4, enabled_file_count: 16, enough_disk: true };
+    },
+    async managementSnapshot() {
+      return [{ id: 'dbip', members: [{ id: 'dbip-city', downloadUrl: 'https://download.db-ip.com/file' }] }];
+    },
+    async runCycle(options) { calls.push(options); },
+  };
+
+  await withServer(readiness, async (baseUrl) => {
+    const list = await fetch(`${baseUrl}/admin/api/data-sources`, { headers: { cookie } });
+    assert.equal(list.status, 200);
+    assert.equal((await list.json()).data.data_sources[0].id, 'dbip');
+
+    const preflight = await fetch(`${baseUrl}/admin/api/data-sources/force-download-preflight`, { headers: { cookie } });
+    assert.equal(preflight.status, 200);
+    assert.equal((await preflight.json()).data.enabled_file_count, 16);
+
+    const configResponse = await fetch(`${baseUrl}/admin/api/data-sources/dbip/config`, {
+      method: 'POST',
+      headers: { cookie, 'content-type': 'application/json', 'x-csrf-token': 'csrf-value' },
+      body: JSON.stringify({ display_name: 'DB-IP', enabled: true, auto_update_enabled: true, interval_hours: 24 }),
+    });
+    assert.equal(configResponse.status, 200);
+
+    const update = await fetch(`${baseUrl}/admin/api/data-sources/dbip/update`, {
+      method: 'POST',
+      headers: { cookie, 'content-type': 'application/json', 'x-csrf-token': 'csrf-value' },
+      body: '{}',
+    });
+    assert.equal(update.status, 202);
+    await new Promise((resolve) => setImmediate(resolve));
+    assert.deepEqual(calls[0], {
+      unitIds: ['dbip'],
+      force: false,
+      trigger: 'manual',
+      validateAfterUpdate: false,
+    });
+
+    const forceAll = await fetch(`${baseUrl}/admin/api/data-sources/force-download-all`, {
+      method: 'POST',
+      headers: { cookie, 'content-type': 'application/json', 'x-csrf-token': 'csrf-value' },
+      body: '{}',
+    });
+    assert.equal(forceAll.status, 202);
+    await new Promise((resolve) => setImmediate(resolve));
+    assert.deepEqual(calls[1], {
+      unitIds: null,
+      force: true,
+      trigger: 'manual',
+      validateAfterUpdate: true,
+    });
+  }, allowAuthenticator, null, null, { adminAuthService, managementRepository, updateScheduler });
+});
+
 test('public lookup shell and single-IP endpoint work without exposing HMAC credentials', async () => {
   const readiness = createReadiness([
     { id: 'dbip-city', required: true, ready: true },

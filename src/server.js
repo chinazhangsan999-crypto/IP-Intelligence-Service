@@ -4,6 +4,7 @@ import { HttpError } from './http/HttpError.js';
 import { sendError, sendJson } from './http/respond.js';
 import { resolveRequestId } from './utils/requestId.js';
 import { normalizeClassificationRule } from './services/ClassificationRuleService.js';
+import { DATA_SOURCE_UNIT_IDS, DATA_SOURCE_UNITS } from './data/dataSourceCatalog.js';
 
 function getPathname(req) {
   try {
@@ -48,12 +49,22 @@ function routeKind(method, pathname) {
   if (method === 'POST' && pathname === '/admin/api/account') return 'admin-account';
   if (method === 'GET' && pathname === '/admin/api/observability') return 'admin-observability';
   if (method === 'GET' && pathname === '/admin/api/management') return 'admin-management';
+  if (method === 'GET' && pathname === '/admin/api/data-sources') return 'admin-data-sources';
+  if (method === 'GET' && pathname === '/admin/api/source-credentials') return 'admin-source-credentials';
+  if (method === 'GET' && pathname === '/admin/api/data-sources/force-download-preflight') return 'admin-data-force-preflight';
   if (method === 'POST' && pathname === '/admin/api/clients') return 'admin-client-create';
   if (method === 'POST' && /^\/admin\/api\/clients\/[^/]+\/rotate$/.test(pathname)) return 'admin-client-rotate';
   if (method === 'POST' && /^\/admin\/api\/clients\/[^/]+\/status$/.test(pathname)) return 'admin-client-status';
   if (method === 'POST' && pathname === '/admin/api/classification-rules') return 'admin-rule-save';
+  if (method === 'POST' && /^\/admin\/api\/classification-rules\/\d+$/.test(pathname)) return 'admin-rule-update';
   if (method === 'POST' && /^\/admin\/api\/classification-rules\/\d+\/status$/.test(pathname)) return 'admin-rule-status';
   if (method === 'POST' && pathname === '/admin/api/data-update') return 'admin-data-update';
+  if (method === 'POST' && pathname === '/admin/api/data-sources/check-all') return 'admin-data-check-all';
+  if (method === 'POST' && pathname === '/admin/api/data-sources/update-all') return 'admin-data-update-all';
+  if (method === 'POST' && pathname === '/admin/api/data-sources/force-download-all') return 'admin-data-force-all';
+  if (method === 'POST' && /^\/admin\/api\/data-sources\/[^/]+\/config$/.test(pathname)) return 'admin-data-source-config';
+  if (method === 'POST' && /^\/admin\/api\/data-sources\/[^/]+\/credentials$/.test(pathname)) return 'admin-source-credentials-save';
+  if (method === 'POST' && /^\/admin\/api\/data-sources\/[^/]+\/(download|update)$/.test(pathname)) return 'admin-data-source-action';
   if (method === 'GET' && pathname === '/health') return 'health';
   if (method === 'GET' && pathname === '/metrics') return 'metrics';
   if (method === 'GET' && pathname === '/ready') return 'ready';
@@ -66,6 +77,9 @@ function routeKind(method, pathname) {
 function allowedMethods(pathname) {
   if (/^\/admin\/api\/clients\/[^/]+\/(rotate|status)$/.test(pathname)) return ['POST'];
   if (/^\/admin\/api\/classification-rules\/\d+\/status$/.test(pathname)) return ['POST'];
+  if (/^\/admin\/api\/classification-rules\/\d+$/.test(pathname)) return ['POST'];
+  if (/^\/admin\/api\/data-sources\/[^/]+\/(config|download|update)$/.test(pathname)) return ['POST'];
+  if (/^\/admin\/api\/data-sources\/[^/]+\/credentials$/.test(pathname)) return ['POST'];
   return {
     '/': ['GET'],
     '/app.css': ['GET'],
@@ -81,9 +95,15 @@ function allowedMethods(pathname) {
     '/admin/api/account': ['POST'],
     '/admin/api/observability': ['GET'],
     '/admin/api/management': ['GET'],
+    '/admin/api/data-sources': ['GET'],
+    '/admin/api/source-credentials': ['GET'],
+    '/admin/api/data-sources/force-download-preflight': ['GET'],
     '/admin/api/clients': ['POST'],
     '/admin/api/classification-rules': ['POST'],
     '/admin/api/data-update': ['POST'],
+    '/admin/api/data-sources/check-all': ['POST'],
+    '/admin/api/data-sources/update-all': ['POST'],
+    '/admin/api/data-sources/force-download-all': ['POST'],
     '/health': ['GET'],
     '/metrics': ['GET'],
     '/ready': ['GET'],
@@ -96,6 +116,9 @@ function allowedMethods(pathname) {
 function routeLabel(pathname) {
   if (/^\/admin\/api\/clients\/[^/]+\/(rotate|status)$/.test(pathname)) return '/admin/api/clients/:id/action';
   if (/^\/admin\/api\/classification-rules\/\d+\/status$/.test(pathname)) return '/admin/api/classification-rules/:id/status';
+  if (/^\/admin\/api\/classification-rules\/\d+$/.test(pathname)) return '/admin/api/classification-rules/:id';
+  if (/^\/admin\/api\/data-sources\/[^/]+\/(config|download|update)$/.test(pathname)) return '/admin/api/data-sources/:id/action';
+  if (/^\/admin\/api\/data-sources\/[^/]+\/credentials$/.test(pathname)) return '/admin/api/data-sources/:id/credentials';
   if (allowedMethods(pathname)) return pathname;
   return 'unmatched';
 }
@@ -457,20 +480,48 @@ export function createHttpServer({
           managementRepository.listClassificationRules(),
           managementRepository.getAdminManagementSnapshot(),
         ]);
+        const dataSources = await updateScheduler?.managementSnapshot?.() || [];
         sendJson(res, 200, {
           request_id: requestId,
           code: 'OK',
-          data: { clients, classification_rules: rules, ...activity },
+          data: { clients, classification_rules: rules, data_sources: dataSources, update_state: updateScheduler?.snapshot?.() || null, ...activity },
         });
         return;
       }
 
-      if (['admin-client-create', 'admin-client-rotate', 'admin-client-status', 'admin-rule-save', 'admin-rule-status'].includes(kind)) {
+      if (kind === 'admin-data-sources') {
+        if (!updateScheduler || !managementRepository) throw new HttpError(503, 'SERVICE_NOT_READY', '数据源管理尚未就绪');
+        sendJson(res, 200, {
+          request_id: requestId,
+          code: 'OK',
+          data: { data_sources: await updateScheduler.managementSnapshot(), update_state: updateScheduler.snapshot() },
+        });
+        return;
+      }
+
+      if (kind === 'admin-source-credentials') {
+        if (!managementRepository) throw new HttpError(503, 'SERVICE_NOT_READY', '凭据库尚未就绪');
+        sendJson(res, 200, { request_id: requestId, code: 'OK', data: { credentials: await managementRepository.listSourceCredentialStatus() } });
+        return;
+      }
+
+      if (kind === 'admin-data-force-preflight') {
+        if (!updateScheduler) throw new HttpError(503, 'SERVICE_NOT_READY', '数据更新器尚未就绪');
+        sendJson(res, 200, {
+          request_id: requestId,
+          code: 'OK',
+          data: await updateScheduler.forceDownloadPreflight(),
+        });
+        return;
+      }
+
+      if (['admin-client-create', 'admin-client-rotate', 'admin-client-status', 'admin-rule-save', 'admin-rule-update', 'admin-rule-status', 'admin-data-source-config', 'admin-source-credentials-save'].includes(kind)) {
         if (!isJsonContentType(req.headers['content-type'])) {
           req.resume();
           throw new HttpError(415, 'UNSUPPORTED_MEDIA_TYPE', 'Content-Type must be application/json');
         }
-        if (!apiClientService || !managementRepository) throw new HttpError(503, 'SERVICE_NOT_READY', '管理数据尚未就绪');
+        const clientAction = ['admin-client-create', 'admin-client-rotate', 'admin-client-status'].includes(kind);
+        if (!managementRepository || (clientAction && !apiClientService)) throw new HttpError(503, 'SERVICE_NOT_READY', '管理数据尚未就绪');
         const payload = parseJsonObject(await readRawBody(req, config.security.maxBodyBytes));
         try {
           if (kind === 'admin-client-create') {
@@ -495,6 +546,8 @@ export function createHttpServer({
             return;
           }
           if (kind === 'admin-rule-save') {
+            const ruleSourceId = String(payload.source_id || '').trim() || null;
+            if (ruleSourceId && !DATA_SOURCE_UNIT_IDS.has(ruleSourceId)) throw new HttpError(422, 'INVALID_MANAGEMENT_INPUT', '关联数据源不存在');
             const normalizedRule = normalizeClassificationRule({
               name: payload.name,
               priority: Number(payload.priority),
@@ -505,10 +558,63 @@ export function createHttpServer({
               flags: payload.flags,
               enabled: payload.enabled,
             });
-            const rule = await managementRepository.saveClassificationRule({ ...normalizedRule, enabled: payload.enabled });
+            const rule = await managementRepository.saveClassificationRule({ ...normalizedRule, sourceId: ruleSourceId, enabled: payload.enabled });
             await reloadClassificationRules?.();
             await managementRepository.recordAudit({ eventType: 'admin_rule_save', outcome: 'success', requestId, metadata: { rule_id: rule.id, name: rule.name } });
             sendJson(res, 200, { request_id: requestId, code: 'OK', data: { rule } });
+            return;
+          }
+          if (kind === 'admin-rule-update') {
+            const ruleId = Number(pathname.match(/classification-rules\/(\d+)$/)?.[1]);
+            const ruleSourceId = String(payload.source_id || '').trim() || null;
+            if (ruleSourceId && !DATA_SOURCE_UNIT_IDS.has(ruleSourceId)) throw new HttpError(422, 'INVALID_MANAGEMENT_INPUT', '关联数据源不存在');
+            const normalizedRule = normalizeClassificationRule({
+              name: payload.name,
+              priority: Number(payload.priority),
+              matchType: payload.match_type,
+              matchValue: payload.match_value,
+              networkType: payload.network_type,
+              confidence: payload.confidence,
+              flags: payload.flags,
+              enabled: payload.enabled,
+            });
+            const rule = await managementRepository.updateClassificationRule(ruleId, { ...normalizedRule, sourceId: ruleSourceId, enabled: payload.enabled });
+            if (!rule) throw new HttpError(404, 'NOT_FOUND', '判断规则不存在');
+            await reloadClassificationRules?.();
+            await managementRepository.recordAudit({ eventType: 'admin_rule_update', outcome: 'success', requestId, metadata: { rule_id: rule.id, name: rule.name } });
+            sendJson(res, 200, { request_id: requestId, code: 'OK', data: { rule } });
+            return;
+          }
+          if (kind === 'admin-data-source-config') {
+            const sourceId = decodeURIComponent(pathname.match(/data-sources\/([^/]+)\/config$/)?.[1] || '');
+            if (!DATA_SOURCE_UNIT_IDS.has(sourceId)) throw new HttpError(404, 'NOT_FOUND', '数据源不存在');
+            const displayName = String(payload.display_name || '').trim();
+            const intervalHours = Number(payload.interval_hours);
+            if (!displayName || displayName.length > 128 || !Number.isInteger(intervalHours) || intervalHours < 1 || intervalHours > 744) {
+              throw new HttpError(422, 'INVALID_MANAGEMENT_INPUT', '请填写有效的数据源名称和 1～744 小时更新周期');
+            }
+            const config = await managementRepository.updateDataSourceConfig(sourceId, {
+              displayName,
+              enabled: payload.enabled === true,
+              autoUpdateEnabled: payload.auto_update_enabled === true,
+              intervalHours,
+            }, session.admin_user_id);
+            await managementRepository.recordAudit({ eventType: 'admin_data_source_config', outcome: 'success', requestId, metadata: { source_id: sourceId } });
+            sendJson(res, 200, { request_id: requestId, code: 'OK', data: { config } });
+            return;
+          }
+          if (kind === 'admin-source-credentials-save') {
+            const sourceId = decodeURIComponent(pathname.match(/data-sources\/([^/]+)\/credentials$/)?.[1] || '');
+            const unit = DATA_SOURCE_UNITS.find((item) => item.id === sourceId);
+            if (!unit?.credentials?.length) throw new HttpError(404, 'NOT_FOUND', '该数据源不需要服务器凭据');
+            for (const field of unit.credentials) {
+              const value = String(payload[field.name] || '').trim();
+              if (!value) { if (field.optional) continue; throw new HttpError(422, 'INVALID_MANAGEMENT_INPUT', `${field.label} 不能为空`); }
+              if (value.length > 512) throw new HttpError(422, 'INVALID_MANAGEMENT_INPUT', '凭据长度无效');
+              await managementRepository.setSourceCredential(sourceId, field.name, value, config.clientSecretMasterKey, session.admin_user_id);
+            }
+            await managementRepository.recordAudit({ eventType: 'admin_source_credentials_save', outcome: 'success', requestId, metadata: { source_id: sourceId, fields: unit.credentials.map((field) => field.name) } });
+            sendJson(res, 200, { request_id: requestId, code: 'OK', data: { saved: true } });
             return;
           }
           const ruleId = Number(pathname.match(/classification-rules\/(\d+)\/status$/)?.[1]);
@@ -529,9 +635,46 @@ export function createHttpServer({
         if (!updateScheduler) throw new HttpError(503, 'SERVICE_NOT_READY', '数据更新器尚未就绪');
         if (updateScheduler.snapshot().running) throw new HttpError(409, 'UPDATE_RUNNING', '数据更新任务正在执行');
         if (isJsonContentType(req.headers['content-type'])) parseJsonObject(await readRawBody(req, config.security.maxBodyBytes));
-        void updateScheduler.runCycle();
+        void updateScheduler.runCycle({ trigger: 'manual' });
         await managementRepository?.recordAudit({ eventType: 'admin_data_update', outcome: 'success', requestId, metadata: { trigger: 'manual' } });
         sendJson(res, 202, { request_id: requestId, code: 'ACCEPTED', data: { started: true } });
+        return;
+      }
+
+      if (['admin-data-check-all', 'admin-data-update-all', 'admin-data-force-all', 'admin-data-source-action'].includes(kind)) {
+        if (!updateScheduler || !managementRepository) throw new HttpError(503, 'SERVICE_NOT_READY', '数据更新器尚未就绪');
+        if (updateScheduler.snapshot().running) throw new HttpError(409, 'UPDATE_RUNNING', '已有数据更新任务正在执行');
+        if (isJsonContentType(req.headers['content-type'])) parseJsonObject(await readRawBody(req, config.security.maxBodyBytes));
+        let unitIds = null;
+        let force = false;
+        let eventType = 'admin_data_update_all';
+        if (kind === 'admin-data-check-all') {
+          eventType = 'admin_data_check_all';
+        } else if (kind === 'admin-data-force-all') {
+          force = true;
+          eventType = 'admin_data_force_download_all';
+        } else if (kind === 'admin-data-source-action') {
+          const match = pathname.match(/data-sources\/([^/]+)\/(download|update)$/);
+          const sourceId = decodeURIComponent(match?.[1] || '');
+          if (!DATA_SOURCE_UNIT_IDS.has(sourceId)) throw new HttpError(404, 'NOT_FOUND', '数据源不存在');
+          unitIds = [sourceId];
+          force = match?.[2] === 'download';
+          eventType = force ? 'admin_data_source_download' : 'admin_data_source_update';
+        }
+        if (kind === 'admin-data-check-all') {
+          const sources = await updateScheduler.managementSnapshot();
+          await managementRepository.recordAudit({ eventType, outcome: 'success', requestId, metadata: { source_count: sources.length } });
+          sendJson(res, 200, { request_id: requestId, code: 'OK', data: { data_sources: sources, update_state: updateScheduler.snapshot() } });
+          return;
+        }
+        void updateScheduler.runCycle({
+          unitIds,
+          force,
+          trigger: 'manual',
+          validateAfterUpdate: kind === 'admin-data-force-all',
+        });
+        await managementRepository.recordAudit({ eventType, outcome: 'success', requestId, metadata: { source_id: unitIds?.[0] || null, force } });
+        sendJson(res, 202, { request_id: requestId, code: 'ACCEPTED', data: { started: true, source_id: unitIds?.[0] || 'all-data-sources', force } });
         return;
       }
       }

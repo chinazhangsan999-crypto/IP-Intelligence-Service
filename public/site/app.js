@@ -28,6 +28,12 @@
       asn_org: 'ASN 归属', network_type: '网络类型', isp: '运营商',
       is_mobile: '移动网络', is_hosting: '托管网络', is_proxy: '代理',
       is_vpn: 'VPN', is_tor: 'Tor', is_anycast: 'Anycast',
+      special_purpose: '特殊用途地址', is_fullbogon: 'Fullbogon 路由状态',
+      verified_crawler: '官方爬虫身份', is_private_relay: 'Apple 隐私中继',
+      bgp_origin_asn: '当前 BGP Origin ASN', bgp_prefix: '当前 BGP 前缀',
+      asn_conflict: 'ASN 来源冲突', rpki_status: 'RPKI 路由授权',
+      resource_registration: '地址资源注册', rdap_service: 'RDAP 查询服务',
+      canonical_org: '统一运营组织', peeringdb_network_type: 'PeeringDB 网络类别',
     },
   });
 
@@ -38,6 +44,9 @@
     ['is_vpn', 'VPN', '虚拟专用网络出口', 'shield'],
     ['is_tor', 'Tor', 'Tor 出口节点', 'network'],
     ['is_anycast', 'Anycast', '多节点共享路由地址', 'route'],
+    ['is_fullbogon', 'Fullbogon', '未分配或没有全球路由的辅助证据', 'route'],
+    ['verified_crawler', '官方爬虫', 'Google / Bing 官方公布来源网段', 'network'],
+    ['is_private_relay', '隐私中继', 'Apple iCloud Private Relay 出口', 'shield'],
   ]);
 
   const iconPaths = Object.freeze({

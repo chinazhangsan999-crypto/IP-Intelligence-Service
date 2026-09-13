@@ -6,7 +6,8 @@ node_modules
 .env.*
 coverage
 *.log
-data
+data/**
+!data/.gitkeep
 data/*.tmp-*
 data/*.backup-*
 data/.*.backup.mmdb

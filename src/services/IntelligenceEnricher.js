@@ -22,15 +22,20 @@ function usageNetworkType(usageType) {
 }
 
 export class IntelligenceEnricher {
-  constructor({ cloudProvider, torProvider, proxyProvider, ruleService }) {
+  constructor({ cloudProvider, torProvider, proxyProvider, networkEvidenceProvider, ruleService }) {
     this.cloudProvider = cloudProvider;
     this.torProvider = torProvider;
     this.proxyProvider = proxyProvider;
+    this.networkEvidenceProvider = networkEvidenceProvider;
     this.ruleService = ruleService;
   }
 
   providers() {
-    return [this.cloudProvider, this.torProvider, this.proxyProvider, this.ruleService].filter(Boolean);
+    return [this.cloudProvider, this.torProvider, this.proxyProvider, this.networkEvidenceProvider, this.ruleService].filter(Boolean);
+  }
+
+  lookupSupplementalEvidence({ ip, asn = null }) {
+    return this.networkEvidenceProvider?.lookup(ip, asn) || null;
   }
 
   lookup({ ip, asn, asnOrg }) {
@@ -38,6 +43,7 @@ export class IntelligenceEnricher {
     const evidence = [];
     const sources = [];
     let isp = null;
+    let details = {};
 
     const cloud = this.cloudProvider?.lookup(ip);
     if (cloud?.available) {
@@ -116,6 +122,14 @@ export class IntelligenceEnricher {
       }
     }
 
+    const supplemental = this.networkEvidenceProvider?.lookup(ip, asn);
+    if (supplemental) {
+      details = supplemental.details || {};
+      evidence.push(...(supplemental.evidence || []));
+      sources.push(...(supplemental.sources || []));
+      for (const assertion of supplemental.assertions || []) engine.add(assertion);
+    }
+
     const rules = this.ruleService?.match({ ip, asn, asnOrg }) || [];
     if (this.ruleService) sources.push('classification-rules');
     for (const rule of rules) {
@@ -156,6 +170,7 @@ export class IntelligenceEnricher {
       evidence,
       sources: [...new Set(sources)],
       conflicts: judgment.conflicts,
+      details,
     };
   }
 }

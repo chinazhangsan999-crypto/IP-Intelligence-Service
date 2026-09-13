@@ -13,6 +13,7 @@ const MAX_COMPRESSED_BYTES = 512 * 1024 * 1024;
 const MAX_UNCOMPRESSED_BYTES = 2 * 1024 * 1024 * 1024;
 const MAX_ZIP_ENTRIES = 1_000;
 const BIN_FILE_NAME = /^IP2PROXY-LITE(?:-PX\d+)?\.BIN$/i;
+const forceUpdate = process.argv.includes('--force');
 
 function byteLimiter(maxBytes, label) {
   let total = 0;
@@ -227,7 +228,7 @@ if (!ipData.ip2ProxyAutoUpdateEnabled) {
   const statePath = path.join(config.dataDir, 'ip2proxy-update-state.json');
   const current = await validateBin(ipData.ip2ProxyPath).catch(() => null);
   const lastCheckedAt = await readState(statePath);
-  if (current && lastCheckedAt && Date.now() - lastCheckedAt < ipData.ip2ProxyUpdateIntervalMs) {
+  if (!forceUpdate && current && lastCheckedAt && Date.now() - lastCheckedAt < ipData.ip2ProxyUpdateIntervalMs) {
     process.stdout.write(`${JSON.stringify({
       status: 'not_due', updated: false, version: current.version, next_check_at: new Date(lastCheckedAt + ipData.ip2ProxyUpdateIntervalMs).toISOString(),
     })}\n`);

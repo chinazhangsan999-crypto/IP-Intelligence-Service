@@ -91,7 +91,19 @@ export function loadConfig(env = process.env, cwd = process.cwd()) {
     ipData: Object.freeze({
       cityPath: path.resolve(dataDir, env.DBIP_CITY_MMDB_FILE || 'dbip-city-lite.mmdb'),
       asnPath: path.resolve(dataDir, env.DBIP_ASN_MMDB_FILE || 'dbip-asn-lite.mmdb'),
+      maxmindCountryPath: path.resolve(dataDir, 'maxmind-geolite2-country.mmdb'),
+      maxmindCityPath: path.resolve(dataDir, 'maxmind-geolite2-city.mmdb'),
+      maxmindAsnPath: path.resolve(dataDir, 'maxmind-geolite2-asn.mmdb'),
+      ipgeoCommunityPath: path.resolve(dataDir, 'ipgeo-community.mmdb'),
       cloudRangesPath: path.resolve(dataDir, env.CLOUD_RANGES_FILE || 'cloud-ranges.json'),
+      cloudRangePaths: Object.freeze([
+        path.resolve(dataDir, env.CLOUD_RANGES_FILE || 'cloud-ranges.json'),
+        path.resolve(dataDir, 'cloud-ranges-extended.json'),
+        path.resolve(dataDir, 'azure-public-service-tags.json'),
+        path.resolve(dataDir, 'azure-china-service-tags.json'),
+        path.resolve(dataDir, 'akamai-ranges.json'),
+        path.resolve(dataDir, 'github-meta-ranges.json'),
+      ]),
       torExitPath: path.resolve(dataDir, env.TOR_EXIT_LIST_FILE || 'tor-exit-nodes.txt'),
       ip2ProxyPath: path.resolve(dataDir, env.IP2PROXY_BIN_FILE || 'IP2PROXY-LITE.BIN'),
       sapicsDatasets: SAPICS_DATASETS.map((dataset) => ({

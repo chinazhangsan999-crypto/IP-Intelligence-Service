@@ -1,3 +1,5 @@
+import { decryptClientSecret, encryptClientSecret } from '../security/clientSecretCrypto.js';
+
 export class ManagementRepository {
   constructor(pool) {
     this.pool = pool;
@@ -76,7 +78,7 @@ export class ManagementRepository {
 
   async listEnabledClassificationRules() {
     const result = await this.pool.query(
-      `SELECT id, name, priority, match_type, match_value, network_type,
+      `SELECT id, source_id, name, priority, match_type, match_value, network_type,
               flags, confidence, updated_at
          FROM network_classification_rules
         WHERE enabled = TRUE
@@ -87,7 +89,7 @@ export class ManagementRepository {
 
   async listClassificationRules() {
     const result = await this.pool.query(
-      `SELECT id, name, priority, match_type, match_value, network_type,
+      `SELECT id, source_id, name, priority, match_type, match_value, network_type,
               flags, confidence, enabled, created_at, updated_at
          FROM network_classification_rules
         ORDER BY priority DESC, id ASC`,
@@ -95,12 +97,132 @@ export class ManagementRepository {
     return result.rows;
   }
 
+  async updateClassificationRule(id, rule) {
+    const result = await this.pool.query(
+      `UPDATE network_classification_rules
+          SET name = $2,
+              source_id = $3,
+              priority = $4,
+              match_type = $5,
+              match_value = $6,
+              network_type = $7,
+              flags = $8,
+              confidence = $9,
+              enabled = $10,
+              updated_at = NOW()
+        WHERE id = $1
+      RETURNING *`,
+      [
+        id,
+        rule.name,
+        rule.sourceId || null,
+        rule.priority,
+        rule.matchType,
+        rule.matchValue,
+        rule.networkType,
+        rule.flags || {},
+        rule.confidence,
+        rule.enabled !== false,
+      ],
+    );
+    return result.rows[0] || null;
+  }
+
+  async listDataSourceConfigs() {
+    const result = await this.pool.query(
+      `SELECT source_id, display_name, enabled, auto_update_enabled,
+              interval_hours, last_update_at, last_update_status, last_error, updated_at
+         FROM data_source_configs
+        ORDER BY source_id ASC`,
+    );
+    return result.rows;
+  }
+
+  async ensureDataSourceConfigs(configs) {
+    for (const config of configs) {
+      await this.pool.query(
+        `INSERT INTO data_source_configs (
+           source_id, display_name, enabled, auto_update_enabled, interval_hours
+         ) VALUES ($1, $2, $3, $4, $5)
+         ON CONFLICT (source_id) DO NOTHING`,
+        [config.sourceId, config.displayName, config.enabled, config.autoUpdateEnabled, config.intervalHours],
+      );
+    }
+  }
+
+  async updateDataSourceConfig(sourceId, config, updatedBy = null) {
+    const result = await this.pool.query(
+      `UPDATE data_source_configs
+          SET display_name = $2,
+              enabled = $3,
+              auto_update_enabled = $4,
+              interval_hours = $5,
+              updated_by = $6,
+              updated_at = NOW()
+        WHERE source_id = $1
+      RETURNING source_id, display_name, enabled, auto_update_enabled,
+                interval_hours, last_update_at, last_update_status, last_error, updated_at`,
+      [sourceId, config.displayName, config.enabled, config.autoUpdateEnabled, config.intervalHours, updatedBy],
+    );
+    return result.rows[0] || null;
+  }
+
+  async markDataSourceUpdate(sourceId, { status, error = null }) {
+    await this.pool.query(
+      `UPDATE data_source_configs
+          SET last_update_at = NOW(), last_update_status = $2, last_error = $3
+        WHERE source_id = $1`,
+      [sourceId, status, error],
+    );
+  }
+
+  async listDataSourceVersions() {
+    const result = await this.pool.query(
+      `SELECT source_id, status, required, version, file_checksum,
+              updated_at, expires_at, last_checked_at, last_error, metadata
+         FROM data_source_versions
+        ORDER BY source_id ASC`,
+    );
+    return result.rows;
+  }
+
+  async listSourceCredentialStatus() {
+    const result = await this.pool.query(
+      'SELECT source_id, credential_name, updated_at FROM source_credentials ORDER BY source_id, credential_name',
+    );
+    return result.rows;
+  }
+
+  async setSourceCredential(sourceId, credentialName, secret, masterKey, updatedBy = null) {
+    const encrypted = encryptClientSecret(secret, masterKey, `source:${sourceId}:${credentialName}`);
+    await this.pool.query(
+      `INSERT INTO source_credentials (
+        source_id, credential_name, secret_ciphertext, secret_iv, secret_auth_tag, secret_fingerprint, updated_by
+      ) VALUES ($1, $2, $3, $4, $5, $6, $7)
+      ON CONFLICT (source_id, credential_name) DO UPDATE SET
+        secret_ciphertext = EXCLUDED.secret_ciphertext, secret_iv = EXCLUDED.secret_iv,
+        secret_auth_tag = EXCLUDED.secret_auth_tag, secret_fingerprint = EXCLUDED.secret_fingerprint,
+        updated_by = EXCLUDED.updated_by, updated_at = NOW()`,
+      [sourceId, credentialName, encrypted.ciphertext, encrypted.iv, encrypted.authTag, encrypted.fingerprint, updatedBy],
+    );
+  }
+
+  async getSourceCredentials(sourceId, masterKey) {
+    const result = await this.pool.query(
+      `SELECT credential_name, secret_ciphertext, secret_iv, secret_auth_tag
+         FROM source_credentials WHERE source_id = $1`, [sourceId],
+    );
+    return Object.fromEntries(result.rows.map((row) => [row.credential_name, decryptClientSecret({
+      ciphertext: row.secret_ciphertext, iv: row.secret_iv, authTag: row.secret_auth_tag,
+    }, masterKey, `source:${sourceId}:${row.credential_name}`)]));
+  }
+
   async setClassificationRuleEnabled(id, enabled) {
     const result = await this.pool.query(
       `UPDATE network_classification_rules
           SET enabled = $2, updated_at = NOW()
         WHERE id = $1
-      RETURNING id, name, priority, match_type, match_value, network_type,
+      RETURNING id, source_id, name, priority, match_type, match_value, network_type,
                 flags, confidence, enabled, created_at, updated_at`,
       [id, enabled],
     );
@@ -122,7 +244,7 @@ export class ManagementRepository {
       ),
       this.pool.query(
         `SELECT id, source_id, status, target_version, started_at, completed_at,
-                error_message
+                error_message, details
            FROM update_jobs
           ORDER BY started_at DESC
           LIMIT 20`,
@@ -155,10 +277,11 @@ export class ManagementRepository {
   async saveClassificationRule(rule) {
     const result = await this.pool.query(
       `INSERT INTO network_classification_rules (
-         name, priority, match_type, match_value, network_type,
+         name, source_id, priority, match_type, match_value, network_type,
          flags, confidence, enabled
-       ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+       ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
        ON CONFLICT (name) DO UPDATE SET
+         source_id = EXCLUDED.source_id,
          priority = EXCLUDED.priority,
          match_type = EXCLUDED.match_type,
          match_value = EXCLUDED.match_value,
@@ -170,6 +293,7 @@ export class ManagementRepository {
        RETURNING *`,
       [
         rule.name,
+        rule.sourceId || null,
         rule.priority,
         rule.matchType,
         rule.matchValue,

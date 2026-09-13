@@ -67,3 +67,34 @@ test('missing optional provider files remain unavailable without throwing', asyn
   assert.equal(tor.publicState().ready, false);
   assert.equal(proxy.publicState().ready, false);
 });
+
+test('cloud provider merges every installed official range file and ignores missing optional files', async () => {
+  const directory = await fs.mkdtemp(path.join(os.tmpdir(), 'multi-cloud-provider-test-'));
+  try {
+    const base = path.join(directory, 'base.json');
+    const extended = path.join(directory, 'extended.json');
+    await fs.writeFile(base, JSON.stringify({ ranges: [{ cidr: '1.1.1.0/24', provider: 'base', network_type: 'hosting' }] }));
+    await fs.writeFile(extended, JSON.stringify({ ranges: [{ cidr: '8.8.8.0/24', provider: 'extended', network_type: 'cdn' }] }));
+    const provider = await CloudRangeProvider.load([base, extended, path.join(directory, 'missing.json')]);
+    assert.equal(provider.lookup('1.1.1.1').matches[0].provider, 'base');
+    assert.equal(provider.lookup('8.8.8.8').matches[0].provider, 'extended');
+    assert.match(provider.publicState().version, /2 files \/ 2 ranges/);
+  } finally {
+    await fs.rm(directory, { recursive: true, force: true });
+  }
+});
+
+test('Azure Public and China evidence remain distinguishable after range files are merged', async () => {
+  const directory = await fs.mkdtemp(path.join(os.tmpdir(), 'azure-cloud-provider-test-'));
+  try {
+    const publicCloud = path.join(directory, 'azure-public.json');
+    const chinaCloud = path.join(directory, 'azure-china.json');
+    await fs.writeFile(publicCloud, JSON.stringify({ ranges: [{ cidr: '20.0.0.0/24', provider: 'azure-public', service: 'AzureCloud.eastus', network_type: 'hosting' }] }));
+    await fs.writeFile(chinaCloud, JSON.stringify({ ranges: [{ cidr: '40.0.0.0/24', provider: 'azure-china', service: 'AzureCloud.chinanorth3', network_type: 'hosting' }] }));
+    const provider = await CloudRangeProvider.load([publicCloud, chinaCloud]);
+    assert.equal(provider.lookup('20.0.0.1').matches[0].provider, 'azure-public');
+    assert.equal(provider.lookup('40.0.0.1').matches[0].provider, 'azure-china');
+  } finally {
+    await fs.rm(directory, { recursive: true, force: true });
+  }
+});

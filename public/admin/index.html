@@ -59,10 +59,8 @@
     <nav class="console-nav" aria-label="运维中心栏目">
       <a href="#overview">运行概览</a>
       <a href="#clients">接入方</a>
-      <a href="#rules">判断规则</a>
-      <a href="#data-operations">数据更新</a>
+      <a href="#system-management">系统管理</a>
       <a href="#audit">审计记录</a>
-      <a href="#account">账户安全</a>
     </nav>
 
     <main id="main-content" class="dashboard" tabindex="-1">
@@ -123,9 +121,38 @@
         <div class="table-scroll"><table><thead><tr><th scope="col">接入方</th><th scope="col">状态</th><th scope="col">24h 请求 / IP / 错误</th><th scope="col">限速</th><th scope="col">最近使用</th><th scope="col">操作</th></tr></thead><tbody id="clients-body"></tbody></table></div>
       </section>
 
+      <section class="system-heading" id="system-management" aria-labelledby="system-management-title">
+        <div><p class="eyebrow">SYSTEM MANAGEMENT</p><h2 id="system-management-title">系统管理</h2><p>集中管理数据库、分类规则、更新任务与账户安全。</p></div>
+        <nav class="section-nav" aria-label="系统管理栏目">
+          <a href="#database-center">数据库中心</a>
+          <a href="#rules">分类系统</a>
+          <a href="#data-operations">更新任务</a>
+          <a href="#account">账户安全</a>
+        </nav>
+      </section>
+
+      <section class="panel management-panel database-center" id="database-center" aria-labelledby="database-center-title">
+        <div class="panel-heading database-heading">
+          <div><h2 id="database-center-title">数据库中心</h2><p>查看全部上游入口、版本与更新状态；下载文件先校验，成功后才替换现有数据库。</p></div>
+          <div class="heading-actions">
+            <button class="secondary-button labeled" id="check-all-sources-button" type="button">刷新数据状态</button>
+            <button class="primary-button compact" id="update-all-sources-button" type="button">一键更新全部</button>
+            <button class="secondary-button labeled danger-outline" id="force-download-all-button" type="button">一键下载全部</button>
+          </div>
+        </div>
+        <div class="source-summary" aria-label="数据源汇总">
+          <div><span>数据库组</span><strong id="database-group-count">0</strong></div>
+          <div><span>数据文件</span><strong id="database-file-count">0</strong></div>
+          <div><span>正常可用</span><strong id="database-ready-count">0</strong></div>
+          <div><span>需要处理</span><strong id="database-issue-count">0</strong></div>
+        </div>
+        <div class="database-list" id="database-list" aria-live="polite"></div>
+      </section>
+
       <section class="panel management-panel" id="rules" aria-labelledby="rules-title">
-        <div class="panel-heading"><div><h2 id="rules-title">网络判断规则</h2><p>规则按优先级匹配 ASN、组织名称或 CIDR，保存后立即用于新查询。</p></div><span class="count-badge" id="rule-count">0 条</span></div>
+        <div class="panel-heading"><div><h2 id="rules-title">分类系统</h2><p>按优先级匹配 ASN、组织名称或 CIDR；可新增、编辑和即时启停。</p></div><span class="count-badge" id="rule-count">0 条</span></div>
         <form class="rule-form" id="rule-form" novalidate>
+          <div class="field-group"><label for="rule-source-id">关联数据源</label><select class="form-input" id="rule-source-id" name="source_id"><option value="">通用人工规则</option></select></div>
           <div class="field-group"><label for="rule-name">规则名称</label><input class="form-input" id="rule-name" name="name" type="text" autocomplete="off" maxlength="128" placeholder="例如 国内云厂商网段…" required></div>
           <div class="field-group"><label for="rule-match-type">匹配方式</label><select class="form-input" id="rule-match-type" name="match_type"><option value="asn">ASN</option><option value="asn_org">ASN 组织名称</option><option value="cidr">CIDR 网段</option></select></div>
           <div class="field-group"><label for="rule-match-value">匹配值</label><input class="form-input" id="rule-match-value" name="match_value" type="text" autocomplete="off" spellcheck="false" maxlength="256" placeholder="例如 15169 或 203.0.113.0/24…" required></div>
@@ -134,15 +161,16 @@
           <div class="field-group"><label for="rule-priority">优先级</label><input class="form-input" id="rule-priority" name="priority" type="number" inputmode="numeric" min="-100000" max="100000" value="100" required></div>
           <label class="check-field"><input id="rule-hosting" name="is_hosting" type="checkbox"> 标记为托管网络</label>
           <label class="check-field"><input id="rule-mobile" name="is_mobile" type="checkbox"> 标记为移动网络</label>
-          <button class="primary-button compact" id="rule-submit" type="submit">保存判断规则</button>
+          <button class="primary-button compact" id="rule-submit" type="submit">新增分类规则</button>
+          <button class="secondary-button labeled" id="rule-cancel" type="button" hidden>取消编辑</button>
         </form>
         <p class="form-error" id="rule-error" role="alert" hidden></p>
-        <div class="table-scroll"><table><thead><tr><th scope="col">规则</th><th scope="col">匹配条件</th><th scope="col">结论</th><th scope="col">优先级</th><th scope="col">状态</th><th scope="col">操作</th></tr></thead><tbody id="rules-body"></tbody></table></div>
+        <div class="table-scroll"><table><thead><tr><th scope="col">规则</th><th scope="col">关联来源</th><th scope="col">匹配条件</th><th scope="col">结论</th><th scope="col">优先级</th><th scope="col">状态</th><th scope="col">操作</th></tr></thead><tbody id="rules-body"></tbody></table></div>
       </section>
 
       <section class="panel management-panel" id="data-operations" aria-labelledby="data-operations-title">
-        <div class="panel-heading"><div><h2 id="data-operations-title">数据更新与任务</h2><p>可立即启动一次完整更新。下载、校验与热重载在后台执行。</p></div><button class="secondary-button" id="run-update-button" type="button">立即检查更新</button></div>
-        <div class="table-scroll"><table><thead><tr><th scope="col">任务</th><th scope="col">状态</th><th scope="col">目标版本</th><th scope="col">开始时间</th><th scope="col">完成时间</th><th scope="col">错误</th></tr></thead><tbody id="jobs-body"></tbody></table></div>
+        <div class="panel-heading"><div><h2 id="data-operations-title">更新任务</h2><p>记录管理员和自动调度触发的下载、校验、安装与热重载结果。</p></div><span class="count-badge" id="job-count">0 条</span></div>
+        <div class="table-scroll"><table><thead><tr><th scope="col">任务</th><th scope="col">状态</th><th scope="col">目标版本</th><th scope="col">开始时间</th><th scope="col">完成时间</th><th scope="col">结果 / 错误</th></tr></thead><tbody id="jobs-body"></tbody></table></div>
       </section>
 
       <section class="panel management-panel" id="audit" aria-labelledby="audit-title">
@@ -187,6 +215,34 @@
       <div class="secret-row"><input id="generated-secret" type="text" readonly spellcheck="false" aria-describedby="secret-warning"><button class="secondary-button" id="copy-secret" type="button">复制密钥</button></div>
       <p class="warning-copy" id="secret-warning">请将密钥保存到接入站服务器的安全环境变量中。</p>
       <button class="primary-button" type="submit">我已安全保存</button>
+    </form>
+  </dialog>
+  <dialog class="secret-dialog source-dialog" id="source-dialog" aria-labelledby="source-dialog-title">
+    <form id="source-config-form" novalidate>
+      <div class="dialog-heading"><div><span>数据库配置</span><h2 id="source-dialog-title">编辑数据源</h2></div><button class="icon-button" id="source-dialog-close" type="button" aria-label="关闭数据源编辑窗口">×</button></div>
+      <input id="source-config-id" name="source_id" type="hidden">
+      <div class="field-group"><label for="source-config-name">显示名称</label><input class="form-input" id="source-config-name" name="display_name" type="text" autocomplete="off" maxlength="128" required></div>
+      <div class="field-group"><label for="source-config-interval">自动更新周期（小时）</label><input class="form-input" id="source-config-interval" name="interval_hours" type="number" inputmode="numeric" min="1" max="744" required><p class="field-help">只影响自动调度；管理员手动更新不受此周期限制。</p></div>
+      <div class="dialog-checks">
+        <label class="check-field"><input id="source-config-enabled" name="enabled" type="checkbox"> 启用此数据库组</label>
+        <label class="check-field"><input id="source-config-auto" name="auto_update_enabled" type="checkbox"> 允许自动更新</label>
+      </div>
+      <div id="source-credentials" hidden>
+        <p class="source-requirement">凭据只在本次提交时通过 HTTPS 发送，并以加密形式保存在服务器数据库中；页面、API、日志与 Git 均不会回显完整值。</p>
+        <div id="source-credentials-fields"></div>
+      </div>
+      <p class="source-requirement" id="source-config-requirement" hidden></p>
+      <p class="form-error" id="source-config-error" role="alert" hidden></p>
+      <div class="dialog-actions"><button class="secondary-button labeled" id="source-config-cancel" type="button">取消</button><button class="primary-button compact" id="source-config-submit" type="submit">保存数据源配置</button></div>
+    </form>
+  </dialog>
+  <dialog class="secret-dialog confirm-dialog" id="download-dialog" aria-labelledby="download-dialog-title">
+    <form id="download-form">
+      <div class="dialog-heading"><div><span>强制重新下载</span><h2 id="download-dialog-title">下载到服务器</h2></div><button class="icon-button" id="download-dialog-close" type="button" aria-label="关闭下载确认窗口">×</button></div>
+      <p id="download-dialog-copy">系统会重新下载当前数据库组。文件校验成功前不会替换正在使用的数据。</p>
+      <div class="download-preflight" id="download-preflight" aria-live="polite" hidden></div>
+      <input id="download-source-id" type="hidden">
+      <div class="dialog-actions"><button class="secondary-button labeled" id="download-cancel" type="button">取消</button><button class="primary-button compact" id="download-confirm" type="submit">确认下载到服务器</button></div>
     </form>
   </dialog>
   <div class="toast" id="admin-toast" role="status" aria-live="polite" hidden></div>

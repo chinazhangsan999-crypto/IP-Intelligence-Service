@@ -14,6 +14,10 @@ Docker 部署目录：`/opt/ip-intelligence`
 docker-compose --env-file .env.production up -d --build
 ```
 
+Compose 会同时启动内网 Routinator 容器。该容器不映射宿主机端口，只允许应用通过 `backend` 网络读取 `/json`；RPKI 缓存保存在独立 `rpki_cache` 卷中。CAIDA AUA 与 PeeringDB AUP 的用途确认已固化为应用容器的启用前置开关。
+
+Azure Public 与 Azure China 不需要账号或固定下载地址。更新器会分别解析微软官方下载中心当前版本并保存为两个独立数据文件。Akamai 数据源保持停用，部署文件不传入 Akamai 凭据。
+
 生产密钥由 `bootstrap.sh` 首次运行时在服务器本地生成。重复部署会保留原密钥，不会导致已有客户端凭证失效。
 
 如需启用 IP2Proxy LITE 自动更新，只在服务器的 `deploy/.env.production` 中填写下载令牌：

@@ -12,9 +12,17 @@
     'account-username', 'current-password', 'new-password', 'confirm-password',
     'account-error', 'account-success', 'account-submit', 'current-account',
     'client-count', 'client-form', 'client-id', 'client-name', 'client-limit', 'client-submit',
-    'client-error', 'clients-body', 'rule-count', 'rule-form', 'rule-name', 'rule-match-type',
+    'client-error', 'clients-body', 'rule-count', 'rule-form', 'rule-source-id', 'rule-name', 'rule-match-type',
     'rule-match-value', 'rule-network-type', 'rule-confidence', 'rule-priority', 'rule-hosting',
-    'rule-mobile', 'rule-submit', 'rule-error', 'rules-body', 'run-update-button', 'jobs-body',
+    'rule-mobile', 'rule-submit', 'rule-cancel', 'rule-error', 'rules-body', 'jobs-body', 'job-count',
+    'database-group-count', 'database-file-count', 'database-ready-count', 'database-issue-count',
+    'database-list', 'check-all-sources-button', 'update-all-sources-button', 'force-download-all-button',
+    'source-dialog', 'source-config-form', 'source-config-id', 'source-config-name',
+    'source-config-interval', 'source-config-enabled', 'source-config-auto', 'source-config-requirement', 'source-config-error',
+    'source-config-submit', 'source-config-cancel', 'source-dialog-close',
+    'source-credentials', 'source-credentials-fields',
+    'download-dialog', 'download-form', 'download-source-id', 'download-dialog-copy', 'download-preflight',
+    'download-confirm', 'download-cancel', 'download-dialog-close',
     'audit-count', 'audit-body', 'secret-dialog', 'secret-dialog-title', 'generated-secret', 'copy-secret', 'admin-toast',
   ].map((id) => [id, document.getElementById(id)]));
 
@@ -29,6 +37,10 @@
   let timer = null;
   let toastTimer = null;
   const samples = [];
+  let dataSourceUnits = [];
+  let classificationRules = [];
+  let editingRuleId = null;
+  let sourceCredentialFields = [];
   const SVG_NS = 'http://www.w3.org/2000/svg';
 
   function formatNumber(value) {
@@ -52,6 +64,27 @@
     if (days) return `${days}天 ${hours}小时`;
     if (hours) return `${hours}小时 ${minutes}分钟`;
     return `${minutes}分钟`;
+  }
+
+  function jobResultText(job) {
+    if (job.status === 'running') return '任务执行中';
+    if (job.error_message) return job.error_message;
+    const results = job.details?.results || {};
+    const lines = Object.entries(results).map(([id, entry]) => {
+      if (entry.status === 'failed') return `${id}：失败`;
+      const result = entry.result || {};
+      if (result.updated === true) return `${id}：已下载并安装`;
+      if (result.status === 'current') return `${id}：内容相同 / 已是最新`;
+      if (result.status === 'not_due' || result.status === 'deferred') return `${id}：按周期跳过`;
+      return `${id}：检查完成`;
+    });
+    const validation = job.details?.validation;
+    if (validation) {
+      lines.push(validation.passed
+        ? `固定样本校验：通过（${validation.resolved_count}/${validation.sample_count}）`
+        : '固定样本校验：未通过');
+    }
+    return lines.join('；') || '--';
   }
 
   function formatDate(value) {
@@ -144,6 +177,18 @@
     elements['current-account'].textContent = data.user.username;
     elements['auth-screen'].hidden = true;
     elements.console.hidden = false;
+    syncNavigation();
+  }
+
+  function syncNavigation() {
+    const hash = window.location.hash || '#overview';
+    const systemHashes = new Set(['#system-management', '#database-center', '#rules', '#data-operations', '#account']);
+    for (const link of document.querySelectorAll('.console-nav a, .section-nav a')) {
+      const target = link.getAttribute('href');
+      const active = target === hash || (target === '#system-management' && systemHashes.has(hash));
+      if (active) link.setAttribute('aria-current', 'location');
+      else link.removeAttribute('aria-current');
+    }
   }
 
   function createCell(text, className = '') {
@@ -163,7 +208,7 @@
 
   function createStatus(value, labels = {}) {
     const status = document.createElement('span');
-    status.className = `table-status ${value === 'active' || value === 'succeeded' || value === 'success' ? 'ready' : value === 'running' ? 'stale' : 'unavailable'}`;
+    status.className = `table-status ${['active', 'ready', 'succeeded', 'success'].includes(value) ? 'ready' : ['running', 'stale'].includes(value) ? 'stale' : 'unavailable'}`;
     status.textContent = labels[value] || value || '--';
     return status;
   }
@@ -178,7 +223,137 @@
     return button;
   }
 
+  function safeExternalLink(url, label) {
+    const link = document.createElement('a');
+    link.className = 'source-link';
+    link.textContent = label || url;
+    try {
+      const target = new URL(url);
+      if (target.protocol !== 'https:') throw new Error('invalid protocol');
+      link.href = target.href;
+      link.target = '_blank';
+      link.rel = 'noopener noreferrer';
+      link.title = target.href;
+    } catch {
+      link.removeAttribute('href');
+    }
+    return link;
+  }
+
+  function renderDataSources(units, updateState = null) {
+    dataSourceUnits = units || [];
+    const selectedSource = elements['rule-source-id'].value;
+    elements['rule-source-id'].replaceChildren(new Option('通用人工规则', ''));
+    for (const unit of dataSourceUnits) {
+      elements['rule-source-id'].append(new Option(unit.config?.display_name || unit.displayName, unit.id));
+    }
+    elements['rule-source-id'].value = dataSourceUnits.some((unit) => unit.id === selectedSource) ? selectedSource : '';
+    const members = dataSourceUnits.flatMap((unit) => unit.members || []);
+    const ready = members.filter((member) => member.state?.status === 'ready').length;
+    elements['database-group-count'].textContent = formatNumber(dataSourceUnits.length);
+    elements['database-file-count'].textContent = formatNumber(members.length);
+    elements['database-ready-count'].textContent = formatNumber(ready);
+    elements['database-issue-count'].textContent = formatNumber(members.length - ready);
+    elements['database-list'].replaceChildren();
+    if (!dataSourceUnits.length) {
+      const empty = document.createElement('p');
+      empty.className = 'empty-state';
+      empty.textContent = '暂未读取到数据库配置，请刷新状态。';
+      elements['database-list'].append(empty);
+      return;
+    }
+    for (const unit of dataSourceUnits) {
+      const card = document.createElement('article');
+      card.className = 'database-card';
+      const header = document.createElement('div');
+      header.className = 'database-card-header';
+      const heading = document.createElement('div');
+      const title = document.createElement('h3');
+      title.textContent = unit.config?.display_name || unit.displayName;
+      const description = document.createElement('p');
+      description.textContent = unit.description;
+      heading.append(title, description);
+      const actions = document.createElement('div');
+      actions.className = 'action-group database-actions';
+      const disabled = unit.config?.enabled === false || updateState?.running === true;
+      const download = actionButton('下载', 'download-source', unit.id);
+      const edit = actionButton('编辑', 'edit-source', unit.id);
+      const rules = actionButton('规则', 'rules-source', unit.id);
+      const update = actionButton('更新', 'update-source', unit.id);
+      download.title = '强制重新下载到服务器，校验成功后安装';
+      update.title = '检查并更新此数据库组';
+      download.disabled = disabled;
+      update.disabled = disabled;
+      rules.title = '新增或查看与此数据源关联的人工判断规则';
+      actions.append(download, edit, rules, update);
+      header.append(heading, actions);
+
+      const meta = document.createElement('div');
+      meta.className = 'database-meta';
+      const enabled = createStatus(unit.config?.enabled === false ? 'disabled' : 'active', { active: '已启用', disabled: '已停用' });
+      const auto = document.createElement('span');
+      auto.className = 'database-policy';
+      auto.textContent = unit.config?.auto_update_enabled
+        ? `自动更新 · 每 ${formatNumber(unit.config.interval_hours)} 小时`
+        : '仅手动更新';
+      const lastRun = document.createElement('span');
+      lastRun.className = 'database-policy';
+      lastRun.textContent = unit.config?.last_update_at
+        ? `组更新：${unit.config.last_update_status === 'failed' ? '失败' : '成功'} · ${formatDate(unit.config.last_update_at)}`
+        : '尚无组更新记录';
+      if (unit.config?.last_error) lastRun.title = unit.config.last_error;
+      meta.append(enabled, auto, lastRun);
+      if (unit.config?.last_error) {
+        const error = document.createElement('p');
+        error.className = 'database-error';
+        error.textContent = `最近错误：${unit.config.last_error}`;
+        meta.append(error);
+      }
+
+      const tableWrap = document.createElement('div');
+      tableWrap.className = 'table-scroll';
+      const table = document.createElement('table');
+      const thead = document.createElement('thead');
+      const headRow = document.createElement('tr');
+      for (const label of ['数据文件', '类型', '状态 / 版本', '下载与校验入口', '最近更新']) {
+        const th = document.createElement('th'); th.scope = 'col'; th.textContent = label; headRow.append(th);
+      }
+      thead.append(headRow);
+      const tbody = document.createElement('tbody');
+      for (const member of unit.members || []) {
+        const row = document.createElement('tr');
+        const identity = document.createElement('td');
+        const memberName = document.createElement('span'); memberName.className = 'row-title'; memberName.textContent = member.name;
+        const memberMeta = document.createElement('span'); memberMeta.className = 'row-meta mono'; memberMeta.textContent = `${member.id} · ${member.license || '许可证未注明'}`;
+        identity.append(memberName, memberMeta);
+        const stateCell = document.createElement('td');
+        stateCell.append(createStatus(member.state?.status || 'unavailable', { ready: '正常', stale: '已过期', unavailable: '不可用' }));
+        const version = document.createElement('span'); version.className = 'row-meta mono'; version.textContent = member.state?.version || '暂无版本'; stateCell.append(version);
+        if (member.state?.last_error) {
+          const error = document.createElement('span');
+          error.className = 'row-error';
+          error.textContent = `错误：${member.state.last_error}`;
+          stateCell.append(error);
+        }
+        const linksCell = document.createElement('td');
+        const links = document.createElement('div'); links.className = 'source-links';
+        const urls = member.downloadUrls || (member.downloadUrl ? [member.downloadUrl] : []);
+        urls.forEach((url, index) => links.append(safeExternalLink(url, urls.length > 1 ? `下载入口 ${index + 1}` : '下载入口')));
+        if (member.checksumUrl) links.append(safeExternalLink(member.checksumUrl, '校验入口'));
+        if (member.homepageUrl) links.append(safeExternalLink(member.homepageUrl, '来源说明'));
+        if (!links.childElementCount) links.textContent = '需先完成来源要求，再由服务器生成';
+        linksCell.append(links);
+        row.append(identity, createCell(member.kind || '--'), stateCell, linksCell, createCell(formatDate(member.state?.updated_at)));
+        tbody.append(row);
+      }
+      table.append(thead, tbody); tableWrap.append(table);
+      card.append(header, meta, tableWrap);
+      elements['database-list'].append(card);
+    }
+  }
+
   function renderManagement(data) {
+    const sourceNames = new Map((data.data_sources || []).map((unit) => [unit.id, unit.config?.display_name || unit.displayName]));
     const usage = new Map((data.usage_24h || []).map((row) => [row.client_id, row]));
     const clients = data.clients || [];
     elements['client-count'].textContent = `${clients.length} 个`;
@@ -218,9 +393,10 @@
     }
 
     const rules = data.classification_rules || [];
+    classificationRules = rules;
     elements['rule-count'].textContent = `${rules.length} 条`;
     elements['rules-body'].replaceChildren();
-    if (!rules.length) appendEmptyRow(elements['rules-body'], '尚未添加数据库判断规则，当前使用内置规则文件。', 6);
+    if (!rules.length) appendEmptyRow(elements['rules-body'], '尚未添加数据库判断规则，当前使用内置规则文件。', 7);
     for (const rule of rules) {
       const row = document.createElement('tr');
       const identity = document.createElement('td');
@@ -234,20 +410,21 @@
       const statusCell = document.createElement('td');
       statusCell.append(createStatus(rule.enabled ? 'active' : 'disabled', { active: '启用', disabled: '停用' }));
       const actions = document.createElement('td');
-      actions.append(actionButton(rule.enabled ? '停用' : '启用', 'toggle-rule', String(rule.id), rule.enabled));
-      row.append(identity, createCell(`${rule.match_type}: ${rule.match_value}`, 'mono'), createCell(rule.network_type), createCell(formatNumber(rule.priority), 'mono'), statusCell, actions);
+      actions.append(actionButton('编辑', 'edit-rule', String(rule.id)), actionButton(rule.enabled ? '停用' : '启用', 'toggle-rule', String(rule.id), rule.enabled));
+      row.append(identity, createCell(sourceNames.get(rule.source_id) || rule.source_id || '通用人工规则'), createCell(`${rule.match_type}: ${rule.match_value}`, 'mono'), createCell(rule.network_type), createCell(formatNumber(rule.priority), 'mono'), statusCell, actions);
       row.dataset.enabled = String(rule.enabled);
       elements['rules-body'].append(row);
     }
 
     const jobs = data.update_jobs || [];
+    elements['job-count'].textContent = `${jobs.length} 条`;
     elements['jobs-body'].replaceChildren();
     if (!jobs.length) appendEmptyRow(elements['jobs-body'], '暂无数据更新任务记录。', 6);
     for (const job of jobs) {
       const row = document.createElement('tr');
       const statusCell = document.createElement('td');
       statusCell.append(createStatus(job.status, { running: '执行中', succeeded: '成功', failed: '失败' }));
-      row.append(createCell(job.source_id, 'mono'), statusCell, createCell(job.target_version || '--', 'mono'), createCell(formatDate(job.started_at)), createCell(formatDate(job.completed_at)), createCell(job.error_message || '--'));
+      row.append(createCell(job.source_id, 'mono'), statusCell, createCell(job.target_version || '--', 'mono'), createCell(formatDate(job.started_at)), createCell(formatDate(job.completed_at)), createCell(jobResultText(job), 'job-result'));
       elements['jobs-body'].append(row);
     }
 
@@ -262,6 +439,7 @@
       row.append(createCell(formatDate(audit.created_at)), createCell(audit.event_type, 'mono'), outcome, createCell(audit.client_id || '系统'), createCell(audit.request_id || '--', 'mono'));
       elements['audit-body'].append(row);
     }
+    renderDataSources(data.data_sources || [], data.update_state);
   }
 
   function renderSources(readiness) {
@@ -627,12 +805,14 @@
 
   elements['rule-form'].addEventListener('submit', async (event) => {
     event.preventDefault();
+    const wasEditing = Boolean(editingRuleId);
     elements['rule-error'].hidden = true;
     elements['rule-submit'].disabled = true;
     elements['rule-submit'].textContent = '正在保存…';
     try {
-      await postManagement('/admin/api/classification-rules', {
+      await postManagement(editingRuleId ? `/admin/api/classification-rules/${editingRuleId}` : '/admin/api/classification-rules', {
         name: elements['rule-name'].value.trim(),
+        source_id: elements['rule-source-id'].value || null,
         match_type: elements['rule-match-type'].value,
         match_value: elements['rule-match-value'].value.trim(),
         network_type: elements['rule-network-type'].value,
@@ -644,22 +824,50 @@
         },
         enabled: true,
       });
-      elements['rule-form'].reset();
-      elements['rule-priority'].value = '100';
-      showToast('判断规则已保存并立即生效');
+      resetRuleForm();
+      showToast(wasEditing ? '分类规则已更新并立即生效' : '分类规则已保存并立即生效');
       renderManagement(await fetchManagement());
     } catch (error) {
       elements['rule-error'].textContent = error.message || '规则保存失败，请检查匹配值';
       elements['rule-error'].hidden = false;
     } finally {
       elements['rule-submit'].disabled = false;
-      elements['rule-submit'].textContent = '保存判断规则';
+      elements['rule-submit'].textContent = editingRuleId ? '保存规则修改' : '新增分类规则';
     }
   });
 
+  function resetRuleForm() {
+    editingRuleId = null;
+    elements['rule-form'].reset();
+    elements['rule-priority'].value = '100';
+    elements['rule-submit'].textContent = '新增分类规则';
+    elements['rule-cancel'].hidden = true;
+  }
+
+  elements['rule-cancel'].addEventListener('click', resetRuleForm);
+
   elements['rules-body'].addEventListener('click', async (event) => {
-    const button = event.target.closest('button[data-action="toggle-rule"]');
+    const button = event.target.closest('button[data-action]');
     if (!button) return;
+    if (button.dataset.action === 'edit-rule') {
+      const rule = classificationRules.find((item) => String(item.id) === button.dataset.id);
+      if (!rule) return;
+      editingRuleId = rule.id;
+      elements['rule-source-id'].value = rule.source_id || '';
+      elements['rule-name'].value = rule.name;
+      elements['rule-match-type'].value = rule.match_type;
+      elements['rule-match-value'].value = rule.match_value;
+      elements['rule-network-type'].value = rule.network_type;
+      elements['rule-confidence'].value = rule.confidence;
+      elements['rule-priority'].value = String(rule.priority);
+      elements['rule-hosting'].checked = rule.flags?.is_hosting === true;
+      elements['rule-mobile'].checked = rule.flags?.is_mobile === true;
+      elements['rule-submit'].textContent = '保存规则修改';
+      elements['rule-cancel'].hidden = false;
+      elements['rule-name'].focus();
+      return;
+    }
+    if (button.dataset.action !== 'toggle-rule') return;
     const enabled = button.closest('tr')?.dataset.enabled === 'true';
     button.disabled = true;
     try {
@@ -673,19 +881,174 @@
     }
   });
 
-  elements['run-update-button'].addEventListener('click', async () => {
-    elements['run-update-button'].disabled = true;
-    elements['run-update-button'].textContent = '正在启动…';
+  async function startDataUpdate(path, button, pendingLabel) {
+    const previous = button.textContent;
+    button.disabled = true;
+    button.textContent = pendingLabel;
     try {
-      await postManagement('/admin/api/data-update');
-      showToast('数据更新任务已启动，可在任务列表查看进度');
+      await postManagement(path);
+      showToast('数据更新任务已启动，可在更新任务中查看结果');
       setTimeout(() => refresh(), 1200);
     } catch (error) {
-      showError(error.message || '无法启动数据更新任务');
+      showError(error.message || '无法启动数据更新任务，请稍后重试');
     } finally {
-      elements['run-update-button'].disabled = false;
-      elements['run-update-button'].textContent = '立即检查更新';
+      button.disabled = false;
+      button.textContent = previous;
     }
+  }
+
+  elements['check-all-sources-button'].addEventListener('click', async () => {
+    const button = elements['check-all-sources-button'];
+    button.disabled = true;
+    button.textContent = '正在刷新…';
+    try {
+      renderDataSources((await postManagement('/admin/api/data-sources/check-all')).data.data_sources || []);
+      showToast('数据库状态已刷新');
+    } catch (error) {
+      showError(error.message || '无法刷新数据库状态');
+    } finally {
+      button.disabled = false;
+      button.textContent = '刷新数据状态';
+    }
+  });
+
+  elements['update-all-sources-button'].addEventListener('click', () => startDataUpdate(
+    '/admin/api/data-sources/update-all', elements['update-all-sources-button'], '正在启动…',
+  ));
+
+  elements['force-download-all-button'].addEventListener('click', async () => {
+    const button = elements['force-download-all-button'];
+    button.disabled = true;
+    button.textContent = '正在预检…';
+    try {
+      const response = await request('/admin/api/data-sources/force-download-preflight');
+      const preflight = response.data;
+      elements['download-source-id'].value = '__all__';
+      elements['download-dialog-copy'].textContent = '系统将顺序强制重新下载全部已启用数据库。每组校验成功后才替换旧文件，完成后自动执行固定 IP 样本查询。';
+      elements['download-preflight'].replaceChildren();
+      const summary = document.createElement('strong');
+      summary.textContent = `预计处理 ${preflight.enabled_group_count} 个数据库组、${preflight.enabled_file_count} 个数据文件`;
+      const storage = document.createElement('span');
+      storage.textContent = `当前数据 ${formatBytes(preflight.current_data_bytes)} · 可用空间 ${formatBytes(preflight.free_bytes)} · 预计临时空间 ${formatBytes(preflight.estimated_temporary_bytes)}`;
+      elements['download-preflight'].append(summary, storage);
+      for (const warning of preflight.warnings || []) {
+        const line = document.createElement('span');
+        line.textContent = warning;
+        elements['download-preflight'].append(line);
+      }
+      if (preflight.disabled_groups?.length) {
+        const disabled = document.createElement('span');
+        disabled.textContent = `已停用且不会下载：${preflight.disabled_groups.join('、')}`;
+        elements['download-preflight'].append(disabled);
+      }
+      const enoughDisk = preflight.enough_disk !== false;
+      if (!enoughDisk) {
+        const danger = document.createElement('span');
+        danger.className = 'preflight-danger';
+        danger.textContent = '可用磁盘空间不足，已禁止启动强制下载。';
+        elements['download-preflight'].append(danger);
+      }
+      elements['download-preflight'].hidden = false;
+      elements['download-confirm'].disabled = !enoughDisk;
+      elements['download-confirm'].textContent = '确认强制重新下载全部';
+      elements['download-dialog'].showModal();
+      elements['download-confirm'].focus();
+    } catch (error) {
+      showError(error.message || '无法完成下载前检查');
+    } finally {
+      button.disabled = false;
+      button.textContent = '一键下载全部';
+    }
+  });
+
+  function closeSourceDialog() { elements['source-dialog'].close(); }
+  elements['source-dialog-close'].addEventListener('click', closeSourceDialog);
+  elements['source-config-cancel'].addEventListener('click', closeSourceDialog);
+  function closeDownloadDialog() { elements['download-dialog'].close(); }
+  elements['download-dialog-close'].addEventListener('click', closeDownloadDialog);
+  elements['download-cancel'].addEventListener('click', closeDownloadDialog);
+
+  elements['database-list'].addEventListener('click', (event) => {
+    const button = event.target.closest('button[data-action]');
+    if (!button) return;
+    const unit = dataSourceUnits.find((item) => item.id === button.dataset.id);
+    if (!unit) return;
+    if (button.dataset.action === 'edit-source') {
+      elements['source-config-id'].value = unit.id;
+      elements['source-config-name'].value = unit.config?.display_name || unit.displayName;
+      elements['source-config-interval'].value = String(unit.config?.interval_hours || unit.defaults.interval_hours);
+      elements['source-config-enabled'].checked = unit.config?.enabled !== false;
+      elements['source-config-auto'].checked = unit.config?.auto_update_enabled === true;
+      elements['source-config-requirement'].hidden = !unit.requirement;
+      elements['source-config-requirement'].textContent = unit.requirement || '';
+      sourceCredentialFields = unit.credentials || [];
+      elements['source-credentials-fields'].replaceChildren();
+      for (const field of sourceCredentialFields) {
+        const group = document.createElement('div'); group.className = 'field-group';
+        const label = document.createElement('label'); label.htmlFor = `credential-${field.name}`; label.textContent = field.label;
+        const input = document.createElement('input'); input.className = 'form-input'; input.id = `credential-${field.name}`; input.type = 'password'; input.autocomplete = 'new-password'; input.maxLength = 512; input.placeholder = field.optional ? '留空可保持未配置' : '仅本次提交，之后不会显示'; input.required = !field.optional;
+        group.append(label, input); elements['source-credentials-fields'].append(group);
+      }
+      elements['source-credentials'].hidden = sourceCredentialFields.length === 0;
+      elements['source-config-error'].hidden = true;
+      elements['source-dialog'].showModal();
+      elements['source-config-name'].focus();
+    } else if (button.dataset.action === 'rules-source') {
+      resetRuleForm();
+      elements['rule-source-id'].value = unit.id;
+      document.getElementById('rules')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      elements['rule-name'].focus();
+    } else if (button.dataset.action === 'download-source') {
+      elements['download-source-id'].value = unit.id;
+      elements['download-dialog-copy'].textContent = `系统将重新下载“${unit.config?.display_name || unit.displayName}”。校验成功前不会替换正在使用的数据；大型数据库可能消耗较多时间和流量。`;
+      elements['download-preflight'].hidden = true;
+      elements['download-confirm'].disabled = false;
+      elements['download-confirm'].textContent = '确认下载到服务器';
+      elements['download-dialog'].showModal();
+      elements['download-confirm'].focus();
+    } else if (button.dataset.action === 'update-source') {
+      startDataUpdate(`/admin/api/data-sources/${encodeURIComponent(unit.id)}/update`, button, '正在启动…');
+    }
+  });
+
+  elements['source-config-form'].addEventListener('submit', async (event) => {
+    event.preventDefault();
+    const button = elements['source-config-submit'];
+    button.disabled = true;
+    button.textContent = '正在保存…';
+    elements['source-config-error'].hidden = true;
+    try {
+      await postManagement(`/admin/api/data-sources/${encodeURIComponent(elements['source-config-id'].value)}/config`, {
+        display_name: elements['source-config-name'].value.trim(),
+        interval_hours: Number(elements['source-config-interval'].value),
+        enabled: elements['source-config-enabled'].checked,
+        auto_update_enabled: elements['source-config-auto'].checked,
+      });
+      if (sourceCredentialFields.length) {
+        const credentials = Object.fromEntries(sourceCredentialFields.map((field) => [field.name, document.getElementById(`credential-${field.name}`).value]));
+        if (Object.values(credentials).some(Boolean)) await postManagement(`/admin/api/data-sources/${encodeURIComponent(elements['source-config-id'].value)}/credentials`, credentials);
+      }
+      closeSourceDialog();
+      showToast('数据源配置已保存');
+      renderManagement(await fetchManagement());
+    } catch (error) {
+      elements['source-config-error'].textContent = error.message || '配置保存失败，请检查填写内容';
+      elements['source-config-error'].hidden = false;
+      elements['source-config-error'].focus?.();
+    } finally {
+      button.disabled = false;
+      button.textContent = '保存数据源配置';
+    }
+  });
+
+  elements['download-form'].addEventListener('submit', async (event) => {
+    event.preventDefault();
+    const sourceId = elements['download-source-id'].value;
+    closeDownloadDialog();
+    const path = sourceId === '__all__'
+      ? '/admin/api/data-sources/force-download-all'
+      : `/admin/api/data-sources/${encodeURIComponent(sourceId)}/download`;
+    await startDataUpdate(path, elements['download-confirm'], '正在启动…');
   });
 
   elements['copy-secret'].addEventListener('click', async () => {
@@ -699,6 +1062,7 @@
     }
   });
   elements['refresh-button'].addEventListener('click', () => refresh());
+  window.addEventListener('hashchange', syncNavigation);
   elements['retry-button'].addEventListener('click', () => refresh());
   elements['logout-button'].addEventListener('click', logout);
   document.addEventListener('visibilitychange', () => {

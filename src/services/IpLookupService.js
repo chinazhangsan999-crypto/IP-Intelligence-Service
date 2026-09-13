@@ -92,6 +92,26 @@ function baseResult(parsed) {
     is_vpn: null,
     is_tor: null,
     is_anycast: null,
+    bgp_origin_asn: null,
+    bgp_origin_asns: [],
+    bgp_prefix: null,
+    bgp_conflict: null,
+    rpki_status: null,
+    rir: null,
+    allocation_country: null,
+    allocation_status: null,
+    allocation_date: null,
+    rdap_urls: [],
+    special_purpose: null,
+    is_fullbogon: null,
+    verified_crawler: null,
+    crawler_operator: null,
+    crawler_type: null,
+    is_private_relay: null,
+    private_relay_region: null,
+    canonical_org: null,
+    canonical_org_country: null,
+    peeringdb_network_type: null,
     confidence: 'unknown',
     evidence: [],
     source_claims: [],
@@ -121,6 +141,26 @@ function invalidResult(parsed) {
     is_vpn: null,
     is_tor: null,
     is_anycast: null,
+    bgp_origin_asn: null,
+    bgp_origin_asns: [],
+    bgp_prefix: null,
+    bgp_conflict: null,
+    rpki_status: null,
+    rir: null,
+    allocation_country: null,
+    allocation_status: null,
+    allocation_date: null,
+    rdap_urls: [],
+    special_purpose: null,
+    is_fullbogon: null,
+    verified_crawler: null,
+    crawler_operator: null,
+    crawler_type: null,
+    is_private_relay: null,
+    private_relay_region: null,
+    canonical_org: null,
+    canonical_org_country: null,
+    peeringdb_network_type: null,
     confidence: 'unknown',
     evidence: [],
     sources: [],
@@ -153,7 +193,15 @@ export class IpLookupService {
   lookupOne(parsed) {
     if (!parsed.valid) return invalidResult(parsed);
     const result = baseResult(parsed);
-    if (parsed.scope !== 'public') return result;
+    if (parsed.scope !== 'public') {
+      const supplemental = this.enricher?.lookupSupplementalEvidence?.({ ip: parsed.queryAddress, asn: null });
+      if (supplemental) {
+        Object.assign(result, supplemental.details || {});
+        result.evidence.push(...(supplemental.evidence || []));
+        result.sources.push(...(supplemental.sources || []));
+      }
+      return result;
+    }
 
     const query = (provider, fields) => {
       const response = provider.lookup(parsed.queryAddress);
@@ -218,6 +266,7 @@ export class IpLookupService {
       result.is_tor = enrichment.flags.is_tor;
       result.is_anycast = enrichment.flags.is_anycast;
       result.isp = enrichment.isp;
+      Object.assign(result, enrichment.details || {});
       result.evidence.push(...enrichment.evidence);
       result.sources.push(...enrichment.sources);
       result.sources = [...new Set(result.sources)];

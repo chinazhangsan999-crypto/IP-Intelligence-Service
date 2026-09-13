@@ -36,6 +36,9 @@
 - 可观测性：受保护的 Prometheus 指标、HMAC 运行状态、慢请求日志、数据源/更新器/连接池状态和告警规则示例。
 - 运维后台：独立账号密码登录、安全会话、账户修改、运行概览、实时吞吐趋势、数据源、更新器、连接池和接口性能。
 - 暗黑公开查询前台：单 IP 查询、当前访问地址识别、网络身份摘要、风险三态、判断证据与数据覆盖说明。
+- 系统管理数据库中心：统一管理 DB-IP、SAPICS、RIPE RIS、RouteViews、RPKI、NRO/RIR、RDAP、CAIDA、PeeringDB、IANA 特殊地址、Team Cymru Fullbogon、Google/Bing 官方爬虫、Apple Private Relay 与云厂商来源；每组支持启停、自动周期、手动更新、强制下载、状态、版本和错误展示。
+- 身份与路由标签只作为证据和人工审核信息，不作为单项封禁、扣分或处罚依据。
+- Azure Public 与 Azure China（世纪互联）作为两个独立官方来源每周同步；Akamai 按当前授权保持停用且不配置凭据。
 
 当前 City / ASN 数据源已经接入；生产环境仍需同时配置 PostgreSQL 和客户端身份后，`/ready` 才会返回 200。
 
@@ -44,6 +47,7 @@ PostgreSQL 配置与运维命令见 [PostgreSQL 管理数据](docs/postgresql.md
 本地数据库位置、字段能力和署名要求见 [本地 City / ASN 数据库](docs/local-ip-data.md)。
 网络类型、Tor、代理和云厂商数据源见 [IP 情报增强](docs/ip-enrichment.md)。
 自动更新频率、回滚和热重载见 [数据自动更新](docs/data-updates.md)。
+全部来源、用途边界和启用前置条件见 [多源证据管理](docs/evidence-sources.md)。
 指标、运行状态、慢请求和告警规则见 [可观测性](docs/observability.md)。
 后台访问、安全边界和刷新策略见 [运维后台](docs/admin-console.md)。
 公开前台的查询范围、限速和反向代理设置见 [公开查询前台](docs/public-query.md)。

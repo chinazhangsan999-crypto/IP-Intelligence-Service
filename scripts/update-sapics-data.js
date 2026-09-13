@@ -9,6 +9,7 @@ import { SAPICS_REFERENCE_REPOSITORY } from '../src/data/sapicsCatalog.js';
 
 const MAX_DOWNLOAD_BYTES = 768 * 1024 * 1024;
 const REQUEST_TIMEOUT_MS = 180_000;
+const forceUpdate = process.argv.includes('--force');
 
 function beijingDateParts(now = new Date()) {
   const parts = new Intl.DateTimeFormat('en-CA', {
@@ -160,9 +161,9 @@ const now = beijingDateParts();
 let previous = {};
 try { previous = JSON.parse(await fsp.readFile(statePath, 'utf8')); } catch (error) { if (error.code !== 'ENOENT') throw error; }
 
-if (previous.last_success_bjt === now.date) {
+if (!forceUpdate && previous.last_success_bjt === now.date) {
   process.stdout.write(`${JSON.stringify({ status: 'current', updated: false, reason: 'already_updated_today', reference_commit: previous.reference_commit || null })}\n`);
-} else if (now.hour < config.ipData.sapicsUpdateHourBjt) {
+} else if (!forceUpdate && now.hour < config.ipData.sapicsUpdateHourBjt) {
   process.stdout.write(`${JSON.stringify({ status: 'deferred', updated: false, reason: 'waiting_for_daily_source_window' })}\n`);
 } else {
   const reference = await json(`https://api.github.com/repos/${SAPICS_REFERENCE_REPOSITORY}/commits/main`);

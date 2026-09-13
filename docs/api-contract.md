@@ -58,6 +58,26 @@ X-Signature: <64位小写十六进制HMAC-SHA256>
       "is_vpn": null,
       "is_tor": false,
       "is_anycast": null,
+      "bgp_origin_asn": 13335,
+      "bgp_origin_asns": [13335],
+      "bgp_prefix": "1.1.1.0/24",
+      "bgp_conflict": false,
+      "rpki_status": "valid",
+      "rir": "APNIC",
+      "allocation_country": "AU",
+      "allocation_status": "allocated",
+      "allocation_date": "20110811",
+      "rdap_urls": ["https://rdap.apnic.net/"],
+      "special_purpose": null,
+      "is_fullbogon": false,
+      "verified_crawler": false,
+      "crawler_operator": null,
+      "crawler_type": null,
+      "is_private_relay": false,
+      "private_relay_region": null,
+      "canonical_org": "Cloudflare, Inc.",
+      "canonical_org_country": "US",
+      "peeringdb_network_type": "Content",
       "confidence": "high",
       "evidence": [
         {
@@ -112,6 +132,20 @@ X-Signature: <64位小写十六进制HMAC-SHA256>
 `network_type` 是主要网络归类，不代替独立风险标签：`residential`、`mobile`、`business`、`education`、`government`、`hosting`、`cdn`、`unknown`。
 
 `confidence`：`unknown`、`low`、`medium`、`high`。它表示证据充分程度，不表示 IP 安全等级。
+
+## 路由、注册和网络身份字段
+
+- `bgp_origin_asn`、`bgp_origin_asns`、`bgp_prefix`：RIPE RIS 当前路由快照；多源 Origin 时单值字段保持 `null`。
+- `bgp_conflict`：数据库 ASN 是否与当前 BGP Origin 明确冲突；数据库 ASN 缺失时保持 `null`。
+- `rpki_status`：`valid`、`invalid_asn`、`invalid_length`、`mixed`、`not_found` 或 `null`。它只说明路由授权，不表示访客安全性。
+- `rir`、`allocation_*`：NRO/RIR 注册资源证据，不等于访客实际所在地。
+- `rdap_urls`：IANA Bootstrap 对应的权威 RDAP 服务，只返回安全的 HTTPS 地址；正式查询不会同步调用这些地址。
+- `special_purpose`：IANA 特殊用途名称。
+- `is_fullbogon`：Team Cymru 快照命中；只能作为辅助证据。
+- `verified_crawler`、`crawler_operator`、`crawler_type`：Google/Bing 官方网段匹配结果，不依据 User-Agent 猜测。
+- `is_private_relay`、`private_relay_region`：Apple 官方 Private Relay 出口及其声明地区，不等于恶意代理或 VPN。
+- `canonical_org`、`canonical_org_country`：CAIDA AS2Org 统一组织。
+- `peeringdb_network_type`：PeeringDB 的网络自报类型，只作为中置信度辅助信息。
 
 ## 三态规则
 

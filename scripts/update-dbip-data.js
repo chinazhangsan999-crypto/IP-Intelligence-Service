@@ -9,6 +9,8 @@ import { pipeline } from 'node:stream/promises';
 import { Transform } from 'node:stream';
 import { loadConfig } from '../src/config.js';
 
+const forceUpdate = process.argv.includes('--force');
+
 const MAX_COMPRESSED_BYTES = 256 * 1024 * 1024;
 const MAX_UNCOMPRESSED_BYTES = 512 * 1024 * 1024;
 
@@ -141,7 +143,7 @@ const currentVersions = await Promise.all([
   databaseVersion(config.ipData.asnPath),
 ]);
 
-if (currentVersions.every((version) => version === targetVersion)) {
+if (!forceUpdate && currentVersions.every((version) => version === targetVersion)) {
   process.stdout.write(`${JSON.stringify({ status: 'current', version: targetVersion, updated: false })}\n`);
 } else {
   const token = `${process.pid}-${randomUUID()}`;
