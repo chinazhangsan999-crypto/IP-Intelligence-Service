@@ -189,7 +189,10 @@
     renderRdap(data);
     elements['canonical-org'].textContent = text(data.canonical_org);
     elements['canonical-country'].textContent = data.canonical_org_country ? countryName(data.canonical_org_country) : t('unknown');
-    elements['peering-type'].textContent = labels[language].peering[data.peeringdb_network_type] || text(data.peeringdb_network_type);
+    const peeringTypeKey = typeof data.peeringdb_network_type === 'string'
+      ? data.peeringdb_network_type.trim().toLowerCase().replace(/[\s/-]+/g, '_')
+      : null;
+    elements['peering-type'].textContent = labels[language].peering[peeringTypeKey] || text(data.peeringdb_network_type);
     const identities = [];
     if (data.special_purpose) identities.push(t('specialPurpose', { value: data.special_purpose }));
     if (data.verified_crawler === true) identities.push(t('crawler', { value: [data.crawler_operator, data.crawler_type].filter(Boolean).join(' · ') || t('signalHit') }));
