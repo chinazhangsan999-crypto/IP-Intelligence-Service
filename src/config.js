@@ -101,7 +101,6 @@ export function loadConfig(env = process.env, cwd = process.cwd()) {
         path.resolve(dataDir, 'cloud-ranges-extended.json'),
         path.resolve(dataDir, 'azure-public-service-tags.json'),
         path.resolve(dataDir, 'azure-china-service-tags.json'),
-        path.resolve(dataDir, 'akamai-ranges.json'),
         path.resolve(dataDir, 'github-meta-ranges.json'),
       ]),
       torExitPath: path.resolve(dataDir, env.TOR_EXIT_LIST_FILE || 'tor-exit-nodes.txt'),

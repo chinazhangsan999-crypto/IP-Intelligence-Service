@@ -51,7 +51,7 @@ test('admin samples PostgreSQL pool state after management queries finish', asyn
 test('every evidence source is represented by a manageable catalog unit', () => {
   const ids = DATA_SOURCE_UNITS.map((unit) => unit.id);
   assert.equal(new Set(ids).size, ids.length);
-  for (const expected of ['ripe-ris', 'routeviews', 'rpki', 'nro-rir', 'rdap', 'iana-special', 'fullbogons', 'verified-crawlers', 'apple-private-relay', 'caida-as2org', 'peeringdb', 'cloud-extended', 'azure-public', 'azure-china', 'akamai-ranges']) {
+  for (const expected of ['ripe-ris', 'routeviews', 'rpki', 'nro-rir', 'rdap', 'iana-special', 'fullbogons', 'verified-crawlers', 'apple-private-relay', 'caida-as2org', 'peeringdb', 'cloud-extended', 'azure-public', 'azure-china', 'ip2proxy', 'maxmind-geolite2', 'github-meta', 'spamhaus-drop']) {
     assert.equal(ids.includes(expected), true, `${expected} is missing`);
   }
   for (const unit of DATA_SOURCE_UNITS) {
@@ -61,14 +61,22 @@ test('every evidence source is represented by a manageable catalog unit', () => 
   }
 });
 
-test('authorized evidence sources default to managed automatic updates while Akamai stays disabled', () => {
+test('authorized evidence sources default to managed automatic updates while Spamhaus is enabled', () => {
   const byId = new Map(DATA_SOURCE_UNITS.map((unit) => [unit.id, unit]));
   for (const id of ['rpki', 'iana-special', 'fullbogons', 'verified-crawlers', 'apple-private-relay', 'caida-as2org', 'peeringdb', 'cloud-extended', 'azure-public', 'azure-china']) {
     assert.equal(byId.get(id)?.defaultEnabled, true, `${id} should be enabled`);
     assert.equal(byId.get(id)?.defaultAutoUpdate, true, `${id} should update automatically`);
   }
-  assert.equal(byId.get('akamai-ranges')?.defaultEnabled, false);
-  assert.equal(byId.get('akamai-ranges')?.defaultAutoUpdate, false);
+  assert.equal(byId.has('akamai-ranges'), false);
+  assert.equal(byId.get('spamhaus-drop')?.defaultEnabled, true);
+  assert.equal(byId.get('spamhaus-drop')?.defaultAutoUpdate, true);
+});
+
+test('credential-backed data sources expose only safe field metadata', () => {
+  const byId = new Map(DATA_SOURCE_UNITS.map((unit) => [unit.id, unit]));
+  assert.deepEqual(byId.get('ip2proxy')?.credentials.map((field) => field.name), ['download_token', 'download_code']);
+  assert.deepEqual(byId.get('maxmind-geolite2')?.credentials.map((field) => field.name), ['account_id', 'license_key']);
+  assert.equal(byId.get('github-meta')?.credentials[0]?.optional, true);
 });
 
 test('credential-free identity sources use official endpoints and bounded validation', async () => {

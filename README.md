@@ -39,7 +39,7 @@
 - 系统管理数据库中心：统一管理 DB-IP、SAPICS、RIPE RIS、RouteViews、RPKI、NRO/RIR、RDAP、CAIDA、PeeringDB、IANA 特殊地址、Team Cymru Fullbogon、Google/Bing 官方爬虫、Apple Private Relay 与云厂商来源；每组支持启停、自动周期、手动更新、强制下载、状态、版本和错误展示。
 - 正式查询使用本地快照补充 BGP Origin、RPKI、RIR、RDAP、特殊用途、Fullbogon、官方爬虫、Apple Private Relay、CAIDA 组织与 PeeringDB 类型证据；查询过程中不会同步请求外部服务，也不会将任一辅助标签直接用于封禁或处罚。
 - 身份与路由标签只作为证据和人工审核信息，不作为单项封禁、扣分或处罚依据。
-- Azure Public 与 Azure China（世纪互联）作为两个独立官方来源每周同步；Akamai 按当前授权保持停用且不配置凭据。
+- Azure Public 与 Azure China（世纪互联）作为两个独立官方来源每周同步；Spamhaus DROP 作为每日更新的辅助风险证据，不单独触发封禁。
 
 当前 City / ASN 数据源已经接入；生产环境仍需同时配置 PostgreSQL 和客户端身份后，`/ready` 才会返回 200。
 

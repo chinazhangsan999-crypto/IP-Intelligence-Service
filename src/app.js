@@ -370,6 +370,13 @@ async function start() {
       const credentials = await managementRepository.getSourceCredentials(sourceId, config.clientSecretMasterKey);
       if (sourceId === 'github-meta') return credentials.github_token ? { GITHUB_META_TOKEN: credentials.github_token } : {};
       if (sourceId === 'maxmind-geolite2') return { MAXMIND_ACCOUNT_ID: credentials.account_id || '', MAXMIND_LICENSE_KEY: credentials.license_key || '' };
+      if (sourceId === 'ip2proxy') return credentials.download_token && credentials.download_code
+        ? {
+          IP2PROXY_AUTO_UPDATE_ENABLED: '1',
+          IP2PROXY_DOWNLOAD_TOKEN: credentials.download_token,
+          IP2PROXY_DOWNLOAD_CODE: credentials.download_code,
+        }
+        : {};
       return {};
     },
     metrics,

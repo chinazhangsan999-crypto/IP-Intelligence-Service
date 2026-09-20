@@ -42,13 +42,15 @@ test('migrator applies an unapplied migration transactionally', async () => {
 
   const result = await runMigrations(pool, logger);
 
-  assert.equal(result.applied_count, 5);
+  assert.equal(result.applied_count, 6);
   assert.ok(statements.some((entry) => entry.sql === 'BEGIN'));
   assert.ok(statements.some((entry) => entry.sql === 'COMMIT'));
   assert.ok(statements.some((entry) => entry.sql.includes('CREATE TABLE api_clients')));
   assert.ok(statements.some((entry) => entry.sql.includes('CREATE TABLE IF NOT EXISTS admin_users')));
   assert.ok(statements.some((entry) => entry.sql.includes('CREATE TABLE data_source_configs')));
   assert.ok(statements.some((entry) => entry.sql.includes('ADD COLUMN source_id')));
+  assert.ok(statements.some((entry) => entry.sql.includes("DELETE FROM data_source_configs")));
+  assert.ok(statements.some((entry) => entry.sql.includes("WHERE source_id = 'spamhaus-drop'")));
   assert.equal(statements.at(-1).sql, 'RELEASE');
 });
 

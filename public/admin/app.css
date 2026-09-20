@@ -184,6 +184,9 @@ tbody tr:hover { background: #f8fbff; }
 .database-card h3 { margin: 0; color: var(--color-foreground); font-size: 16px; }
 .database-card-header p { margin: 3px 0 0; color: var(--color-muted); font-size: 12px; }
 .database-meta { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; padding: 0 16px 14px; }
+.database-actions .table-button { min-height: 40px; }
+.credential-state { cursor: help; }
+.credential-status { margin: 12px 0 0; color: var(--color-muted); font-size: 13px; line-height: 1.5; }
 .database-error { flex-basis: 100%; margin: 2px 0 0; padding: 8px 10px; color: var(--color-danger); background: var(--color-danger-soft); border-radius: 8px; font-size: 12px; overflow-wrap: anywhere; }
 .database-policy { color: var(--color-muted); font-size: 12px; }
 .database-card table { min-width: 860px; }

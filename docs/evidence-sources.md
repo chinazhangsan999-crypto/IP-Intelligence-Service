@@ -15,7 +15,6 @@
 - PeeringDB：按 AUP 用于自有网络的 IP/ASN 审核和运维，使用游客只读 GET 接口。
 - RPKI：由内网 Routinator 容器提供 `/json`，不映射 HTTP 或 RTR 公网端口。
 - Microsoft Azure：Public Cloud 与 China Cloud 分开下载、分开管理、分开显示版本和错误。
-- Akamai：保持停用，不配置账号、密钥或下载地址。
 
 Azure Public 与 Azure China 的命中结果分别保存为 `azure-public` 与 `azure-china`，不会把世纪互联运营的中国云误写为全球公有云。命中云网段只作为网络类型证据，不能单独触发封禁、扣分或下架。
 
@@ -39,7 +38,6 @@ Azure Public 与 Azure China 的命中结果分别保存为 `azure-public` 与 `
 | PeeringDB | ASN 网络名称、范围与类型辅助信息 | 启用 | 正式查询与中置信度类型辅助 |
 | Oracle、Fastly、DigitalOcean | 扩展云与 CDN 网段 | 启用 | 正式判断 |
 | Azure Public / Azure China | 微软官方云网段 | 启用 | 正式判断 |
-| Akamai | 按当前决定不使用 | 停用 | 不下载、不判断 |
 
 所有来源都保留原始声明。不同来源不是简单投票：RPKI 只证明路由授权，不证明住宅或 VPN；PeeringDB 只辅助网络用途，不覆盖精确 CIDR 人工规则；未知值保持未知。
 
@@ -49,10 +47,13 @@ Azure Public 与 Azure China 的命中结果分别保存为 `azure-public` 与 `
 2. PeeringDB：已确认 AUP；当前使用游客只读接口并限制更新频率。
 3. RPKI：已部署内网 Routinator，未映射公网端口。
 4. Azure Public 与 Azure China：程序从微软官方下载中心分别解析当期 Service Tags JSON，无需账号或固定下载地址。
-5. Akamai：按当前授权保持停用，不配置账号、密钥或下载地址。
-6. IP2Proxy：继续使用服务器上的下载 Token/Code；后台不会返回这些秘密。
+5. IP2Proxy：通过数据中心的“凭据”入口保存下载 Token/Code；后台不会返回这些秘密。
 
 任何前置条件未完成的来源都应保持停用。尝试手动下载时，任务错误会显示缺少的具体配置，不会替换现有数据。
+
+## 已移除来源
+
+- Akamai：已从数据中心、自动更新目录和运行时网段加载中移除，不配置账号、密钥或下载地址。
 
 ## 正式查询新增字段
 

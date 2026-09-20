@@ -20,7 +20,7 @@
     'source-dialog', 'source-config-form', 'source-config-id', 'source-config-name',
     'source-config-interval', 'source-config-enabled', 'source-config-auto', 'source-config-requirement', 'source-config-error',
     'source-config-submit', 'source-config-cancel', 'source-dialog-close',
-    'source-credentials', 'source-credentials-fields',
+    'source-credentials', 'source-credentials-status', 'source-credentials-fields',
     'download-dialog', 'download-form', 'download-source-id', 'download-dialog-copy', 'download-preflight',
     'download-confirm', 'download-cancel', 'download-dialog-close',
     'audit-count', 'audit-body', 'secret-dialog', 'secret-dialog-title', 'generated-secret', 'copy-secret', 'admin-toast',
@@ -278,6 +278,7 @@
       const disabled = unit.config?.enabled === false || updateState?.running === true;
       const download = actionButton('下载', 'download-source', unit.id);
       const edit = actionButton('编辑', 'edit-source', unit.id);
+      const credentials = unit.credentials?.length ? actionButton('凭据', 'credentials-source', unit.id) : null;
       const rules = actionButton('规则', 'rules-source', unit.id);
       const update = actionButton('更新', 'update-source', unit.id);
       download.title = '强制重新下载到服务器，校验成功后安装';
@@ -285,7 +286,8 @@
       download.disabled = disabled;
       update.disabled = disabled;
       rules.title = '新增或查看与此数据源关联的人工判断规则';
-      actions.append(download, edit, rules, update);
+      if (credentials) credentials.title = '填写或更新服务器下载凭据；完整值不会再次显示';
+      actions.append(download, edit, ...(credentials ? [credentials] : []), rules, update);
       header.append(heading, actions);
 
       const meta = document.createElement('div');
@@ -308,6 +310,23 @@
         error.className = 'database-error';
         error.textContent = `最近错误：${unit.config.last_error}`;
         meta.append(error);
+      }
+      if (unit.credentials?.length) {
+        const required = (unit.credentials || []).filter((field) => !field.optional);
+        const configured = new Map((unit.credential_status || []).map((field) => [field.name, field]));
+        const ready = required.length
+          ? required.every((field) => configured.get(field.name)?.configured === true)
+          : (unit.credentials || []).some((field) => configured.get(field.name)?.configured === true);
+        const readyLabel = required.length ? '凭据已配置' : '可选凭据已配置';
+        const waitingLabel = required.length ? '凭据待填写' : '可选凭据未填写';
+        const credentialState = createStatus(ready ? 'ready' : 'stale', { ready: readyLabel, stale: waitingLabel });
+        credentialState.classList.add('credential-state');
+        credentialState.title = ready
+          ? '凭据已加密保存在服务器；出于安全原因不会回显原文。'
+          : (required.length
+            ? `还需要填写：${required.filter((field) => !configured.get(field.name)?.configured).map((field) => field.label).join('、')}`
+            : '可选凭据尚未填写；系统将继续使用匿名公开接口。');
+        meta.append(credentialState);
       }
 
       const tableWrap = document.createElement('div');
@@ -987,31 +1006,45 @@
   elements['download-dialog-close'].addEventListener('click', closeDownloadDialog);
   elements['download-cancel'].addEventListener('click', closeDownloadDialog);
 
+  function openSourceDialog(unit, focusCredentials = false) {
+    elements['source-config-id'].value = unit.id;
+    elements['source-config-name'].value = unit.config?.display_name || unit.displayName;
+    elements['source-config-interval'].value = String(unit.config?.interval_hours || unit.defaults.interval_hours);
+    elements['source-config-enabled'].checked = unit.config?.enabled !== false;
+    elements['source-config-auto'].checked = unit.config?.auto_update_enabled === true;
+    elements['source-config-requirement'].hidden = !unit.requirement;
+    elements['source-config-requirement'].textContent = unit.requirement || '';
+    sourceCredentialFields = unit.credentials || [];
+    const configured = new Map((unit.credential_status || []).map((field) => [field.name, field]));
+    elements['source-credentials-fields'].replaceChildren();
+    for (const field of sourceCredentialFields) {
+      const group = document.createElement('div'); group.className = 'field-group';
+      const label = document.createElement('label'); label.htmlFor = `credential-${field.name}`; label.textContent = `${field.label}${field.optional ? '（可选）' : '（必填）'}`;
+      const input = document.createElement('input'); input.className = 'form-input'; input.id = `credential-${field.name}`; input.type = field.secret === false ? 'text' : 'password'; input.autocomplete = field.secret === false ? 'off' : 'new-password'; input.maxLength = 512; input.placeholder = configured.get(field.name)?.configured ? '已安全保存；留空则保持不变' : (field.optional ? '可留空' : '请填写并保存'); input.required = !field.optional && !configured.get(field.name)?.configured;
+      const helper = document.createElement('p'); helper.className = 'field-help'; helper.textContent = field.helper || '填写后仅以加密形式保存在服务器，后续不会回显。';
+      group.append(label, input, helper); elements['source-credentials-fields'].append(group);
+    }
+    elements['source-credentials'].hidden = sourceCredentialFields.length === 0;
+    if (sourceCredentialFields.length) {
+      const configuredCount = sourceCredentialFields.filter((field) => configured.get(field.name)?.configured).length;
+      elements['source-credentials-status'].textContent = configuredCount
+        ? `已安全保存 ${configuredCount}/${sourceCredentialFields.length} 项凭据。留空不会覆盖已保存内容。`
+        : '尚未保存凭据。请填写本来源需要的下载信息。';
+    }
+    elements['source-config-error'].hidden = true;
+    elements['source-dialog'].showModal();
+    (focusCredentials ? elements['source-credentials-fields'].querySelector('input') : elements['source-config-name'])?.focus();
+  }
+
   elements['database-list'].addEventListener('click', (event) => {
     const button = event.target.closest('button[data-action]');
     if (!button) return;
     const unit = dataSourceUnits.find((item) => item.id === button.dataset.id);
     if (!unit) return;
     if (button.dataset.action === 'edit-source') {
-      elements['source-config-id'].value = unit.id;
-      elements['source-config-name'].value = unit.config?.display_name || unit.displayName;
-      elements['source-config-interval'].value = String(unit.config?.interval_hours || unit.defaults.interval_hours);
-      elements['source-config-enabled'].checked = unit.config?.enabled !== false;
-      elements['source-config-auto'].checked = unit.config?.auto_update_enabled === true;
-      elements['source-config-requirement'].hidden = !unit.requirement;
-      elements['source-config-requirement'].textContent = unit.requirement || '';
-      sourceCredentialFields = unit.credentials || [];
-      elements['source-credentials-fields'].replaceChildren();
-      for (const field of sourceCredentialFields) {
-        const group = document.createElement('div'); group.className = 'field-group';
-        const label = document.createElement('label'); label.htmlFor = `credential-${field.name}`; label.textContent = field.label;
-        const input = document.createElement('input'); input.className = 'form-input'; input.id = `credential-${field.name}`; input.type = 'password'; input.autocomplete = 'new-password'; input.maxLength = 512; input.placeholder = field.optional ? '留空可保持未配置' : '仅本次提交，之后不会显示'; input.required = !field.optional;
-        group.append(label, input); elements['source-credentials-fields'].append(group);
-      }
-      elements['source-credentials'].hidden = sourceCredentialFields.length === 0;
-      elements['source-config-error'].hidden = true;
-      elements['source-dialog'].showModal();
-      elements['source-config-name'].focus();
+      openSourceDialog(unit);
+    } else if (button.dataset.action === 'credentials-source') {
+      openSourceDialog(unit, true);
     } else if (button.dataset.action === 'rules-source') {
       resetRuleForm();
       elements['rule-source-id'].value = unit.id;
@@ -1037,16 +1070,16 @@
     button.textContent = '正在保存…';
     elements['source-config-error'].hidden = true;
     try {
+      if (sourceCredentialFields.length) {
+        const credentials = Object.fromEntries(sourceCredentialFields.map((field) => [field.name, document.getElementById(`credential-${field.name}`).value]));
+        if (Object.values(credentials).some(Boolean)) await postManagement(`/admin/api/data-sources/${encodeURIComponent(elements['source-config-id'].value)}/credentials`, credentials);
+      }
       await postManagement(`/admin/api/data-sources/${encodeURIComponent(elements['source-config-id'].value)}/config`, {
         display_name: elements['source-config-name'].value.trim(),
         interval_hours: Number(elements['source-config-interval'].value),
         enabled: elements['source-config-enabled'].checked,
         auto_update_enabled: elements['source-config-auto'].checked,
       });
-      if (sourceCredentialFields.length) {
-        const credentials = Object.fromEntries(sourceCredentialFields.map((field) => [field.name, document.getElementById(`credential-${field.name}`).value]));
-        if (Object.values(credentials).some(Boolean)) await postManagement(`/admin/api/data-sources/${encodeURIComponent(elements['source-config-id'].value)}/credentials`, credentials);
-      }
       closeSourceDialog();
       showToast('数据源配置已保存');
       renderManagement(await fetchManagement());

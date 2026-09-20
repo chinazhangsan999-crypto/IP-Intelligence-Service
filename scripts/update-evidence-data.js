@@ -576,7 +576,6 @@ const handlers = new Map([
   ['cloud-extended', updateCloudExtended],
   ['azure-public', () => updateAzureServiceTags({ downloadId: 56519, filePrefix: 'ServiceTags_Public_', source: 'azure-public-service-tags', provider: 'azure-public', fileName: 'azure-public-service-tags.json' })],
   ['azure-china', () => updateAzureServiceTags({ downloadId: 57062, filePrefix: 'ServiceTags_China_', source: 'azure-china-service-tags', provider: 'azure-china', fileName: 'azure-china-service-tags.json' })],
-  ['akamai-ranges', () => updateConfiguredCloud({ environmentName: 'AKAMAI_CIDR_URL', source: 'akamai-official-ranges', provider: 'akamai', networkType: 'cdn', fileName: 'akamai-ranges.json' })],
 ]);
 
 if (!handlers.has(sourceId)) throw new Error(`Unsupported evidence source: ${sourceId || 'missing'}`);

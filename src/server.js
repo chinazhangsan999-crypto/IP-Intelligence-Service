@@ -586,14 +586,22 @@ export function createHttpServer({
             sendJson(res, 200, { request_id: requestId, code: 'OK', data: { rule } });
             return;
           }
-          if (kind === 'admin-data-source-config') {
-            const sourceId = decodeURIComponent(pathname.match(/data-sources\/([^/]+)\/config$/)?.[1] || '');
-            if (!DATA_SOURCE_UNIT_IDS.has(sourceId)) throw new HttpError(404, 'NOT_FOUND', '数据源不存在');
-            const displayName = String(payload.display_name || '').trim();
-            const intervalHours = Number(payload.interval_hours);
-            if (!displayName || displayName.length > 128 || !Number.isInteger(intervalHours) || intervalHours < 1 || intervalHours > 744) {
-              throw new HttpError(422, 'INVALID_MANAGEMENT_INPUT', '请填写有效的数据源名称和 1～744 小时更新周期');
+        if (kind === 'admin-data-source-config') {
+          const sourceId = decodeURIComponent(pathname.match(/data-sources\/([^/]+)\/config$/)?.[1] || '');
+          const unit = DATA_SOURCE_UNITS.find((item) => item.id === sourceId);
+          if (!unit) throw new HttpError(404, 'NOT_FOUND', '数据源不存在');
+          const displayName = String(payload.display_name || '').trim();
+          const intervalHours = Number(payload.interval_hours);
+          if (!displayName || displayName.length > 128 || !Number.isInteger(intervalHours) || intervalHours < 1 || intervalHours > 744) {
+            throw new HttpError(422, 'INVALID_MANAGEMENT_INPUT', '请填写有效的数据源名称和 1～744 小时更新周期');
+          }
+          if (payload.auto_update_enabled === true && unit.credentials?.some((field) => !field.optional)) {
+            const saved = await managementRepository.getSourceCredentials(sourceId, config.clientSecretMasterKey);
+            const missing = unit.credentials.filter((field) => !field.optional && !String(saved[field.name] || '').trim());
+            if (missing.length) {
+              throw new HttpError(422, 'SOURCE_CREDENTIALS_REQUIRED', `请先保存 ${missing.map((field) => field.label).join('、')}，再启用自动更新`);
             }
+          }
             const config = await managementRepository.updateDataSourceConfig(sourceId, {
               displayName,
               enabled: payload.enabled === true,
@@ -608,13 +616,20 @@ export function createHttpServer({
             const sourceId = decodeURIComponent(pathname.match(/data-sources\/([^/]+)\/credentials$/)?.[1] || '');
             const unit = DATA_SOURCE_UNITS.find((item) => item.id === sourceId);
             if (!unit?.credentials?.length) throw new HttpError(404, 'NOT_FOUND', '该数据源不需要服务器凭据');
+            const existing = await managementRepository.getSourceCredentials(sourceId, config.clientSecretMasterKey);
+            const submittedFields = [];
             for (const field of unit.credentials) {
               const value = String(payload[field.name] || '').trim();
-              if (!value) { if (field.optional) continue; throw new HttpError(422, 'INVALID_MANAGEMENT_INPUT', `${field.label} 不能为空`); }
+              if (!value) continue;
               if (value.length > 512) throw new HttpError(422, 'INVALID_MANAGEMENT_INPUT', '凭据长度无效');
               await managementRepository.setSourceCredential(sourceId, field.name, value, config.clientSecretMasterKey, session.admin_user_id);
+              existing[field.name] = value;
+              submittedFields.push(field.name);
             }
-            await managementRepository.recordAudit({ eventType: 'admin_source_credentials_save', outcome: 'success', requestId, metadata: { source_id: sourceId, fields: unit.credentials.map((field) => field.name) } });
+            if (!submittedFields.length) throw new HttpError(422, 'INVALID_MANAGEMENT_INPUT', '请至少填写一项凭据');
+            const missing = unit.credentials.filter((field) => !field.optional && !String(existing[field.name] || '').trim());
+            if (missing.length) throw new HttpError(422, 'INVALID_MANAGEMENT_INPUT', `请补充 ${missing.map((field) => field.label).join('、')}`);
+            await managementRepository.recordAudit({ eventType: 'admin_source_credentials_save', outcome: 'success', requestId, metadata: { source_id: sourceId, fields: submittedFields } });
             sendJson(res, 200, { request_id: requestId, code: 'OK', data: { saved: true } });
             return;
           }
@@ -657,7 +672,15 @@ export function createHttpServer({
         } else if (kind === 'admin-data-source-action') {
           const match = pathname.match(/data-sources\/([^/]+)\/(download|update)$/);
           const sourceId = decodeURIComponent(match?.[1] || '');
-          if (!DATA_SOURCE_UNIT_IDS.has(sourceId)) throw new HttpError(404, 'NOT_FOUND', '数据源不存在');
+          const unit = DATA_SOURCE_UNITS.find((item) => item.id === sourceId);
+          if (!unit) throw new HttpError(404, 'NOT_FOUND', '数据源不存在');
+          if (unit.credentials?.some((field) => !field.optional)) {
+            const saved = await managementRepository.getSourceCredentials?.(sourceId, config.clientSecretMasterKey) || {};
+            const missing = unit.credentials.filter((field) => !field.optional && !String(saved[field.name] || '').trim());
+            if (missing.length) {
+              throw new HttpError(422, 'SOURCE_CREDENTIALS_REQUIRED', `请先在“凭据”中填写 ${missing.map((field) => field.label).join('、')}`);
+            }
+          }
           unitIds = [sourceId];
           force = match?.[2] === 'download';
           eventType = force ? 'admin_data_source_download' : 'admin_data_source_update';

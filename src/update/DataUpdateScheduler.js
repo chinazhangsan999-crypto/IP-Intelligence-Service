@@ -96,12 +96,19 @@ export class DataUpdateScheduler {
   }
 
   async managementSnapshot() {
-    const [configs, versions] = await Promise.all([
+    const [configs, versions, credentialStatus] = await Promise.all([
       this.repository?.listDataSourceConfigs?.() || [],
       this.repository?.listDataSourceVersions?.() || [],
+      this.repository?.listSourceCredentialStatus?.() || [],
     ]);
     const configById = new Map(configs.map((config) => [config.source_id, config]));
     const versionById = new Map(versions.map((version) => [version.source_id, version]));
+    const credentialsBySource = new Map();
+    for (const credential of credentialStatus) {
+      const current = credentialsBySource.get(credential.source_id) || new Map();
+      current.set(credential.credential_name, credential.updated_at);
+      credentialsBySource.set(credential.source_id, current);
+    }
     return publicDataSourceCatalog().map((unit) => ({
       ...unit,
       config: configById.get(unit.id) || {
@@ -109,6 +116,11 @@ export class DataUpdateScheduler {
         display_name: unit.displayName,
         ...unit.defaults,
       },
+      credential_status: (unit.credentials || []).map((field) => ({
+        name: field.name,
+        configured: credentialsBySource.get(unit.id)?.has(field.name) === true,
+        updated_at: credentialsBySource.get(unit.id)?.get(field.name) || null,
+      })),
       members: unit.members.map((member) => ({ ...member, state: versionById.get(member.id) || null })),
     }));
   }
@@ -242,6 +254,14 @@ export class DataUpdateScheduler {
           ];
           const credentials = await this.credentialProvider?.(name) || {};
           const env = { ...process.env, ...credentials };
+          const missingCredentials = (unit.credentials || [])
+            .filter((field) => !field.optional && field.environment && !String(env[field.environment] || '').trim());
+          if (missingCredentials.length) {
+            const error = `缺少服务器凭据：${missingCredentials.map((field) => field.label).join('、')}`;
+            results[name] = { status: 'skipped', reason: 'credentials_required', error };
+            await this.repository?.markDataSourceUpdate?.(name, { status: 'skipped', error });
+            continue;
+          }
           const result = await this.execute(scriptPath, this.cwd, this.abortController.signal, args, env);
           if (result?.status === 'failed') throw new Error(result.error || `${name} data update did not install any valid source`);
           results[name] = {
@@ -302,6 +322,9 @@ export class DataUpdateScheduler {
           .filter((unit) => !operations.some((operation) => operation.id === unit.id))
           .filter((unit) => configById.get(unit.id)?.enabled === false)
           .map((unit) => unit.id),
+        skipped_credentials: Object.entries(results)
+          .filter(([, result]) => result.status === 'skipped' && result.reason === 'credentials_required')
+          .map(([id]) => id),
         duration_ms: Date.now() - startedAt.getTime(),
       };
       const failed = Object.entries(results).filter(([, result]) => result.status === 'failed');

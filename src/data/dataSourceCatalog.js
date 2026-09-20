@@ -34,12 +34,16 @@ export const DATA_SOURCE_UNITS = Object.freeze([
   Object.freeze({
     id: 'ip2proxy',
     displayName: 'IP2Proxy LITE',
-    description: '代理、VPN、Tor 与数据中心辅助判断库。',
+    description: '代理、VPN、Tor 与数据中心辅助判断库；下载凭据仅加密保存在服务器。',
     category: 'network_risk',
     script: 'update-ip2proxy-data.js',
     defaultEnabled: true,
     defaultAutoUpdate: false,
     defaultIntervalHours: 168,
+    credentials: Object.freeze([
+      Object.freeze({ name: 'download_token', label: 'IP2Proxy 下载 Token', environment: 'IP2PROXY_DOWNLOAD_TOKEN', secret: true, helper: '在 IP2Location 下载页生成，仅用于服务器下载 LITE 数据库。' }),
+      Object.freeze({ name: 'download_code', label: 'IP2Proxy 下载代码', environment: 'IP2PROXY_DOWNLOAD_CODE', secret: false, helper: '通常为所选 LITE 数据库的下载代码，例如 PX12LITEBIN。' }),
+    ]),
     members: Object.freeze([
       Object.freeze({ id: 'ip2proxy-lite', name: 'IP2Proxy LITE BIN', kind: 'proxy', required: false, license: 'IP2Location LITE', downloadUrl: 'https://www.ip2location.com/download', homepageUrl: 'https://lite.ip2location.com/' }),
     ]),
@@ -280,32 +284,20 @@ export const DATA_SOURCE_UNITS = Object.freeze([
     ]),
   }),
   Object.freeze({
-    id: 'akamai-ranges',
-    displayName: 'Akamai 官方网段',
-    description: '补充 Akamai CDN/边缘网络的官方 CIDR 证据。',
-    category: 'network_risk',
-    script: 'update-evidence-data.js',
-    scriptArgs: Object.freeze(['akamai-ranges']),
-    defaultEnabled: false,
-    defaultAutoUpdate: false,
-    defaultIntervalHours: 24,
-    requirement: '按当前授权决定不使用 Akamai 数据。本来源保持停用，也不配置 Akamai 账号或接口凭据。',
-    members: Object.freeze([
-      Object.freeze({ id: 'akamai-official-ranges', name: 'Akamai Official CIDR Feed', kind: 'cdn', required: false, license: 'Akamai terms', homepageUrl: 'https://techdocs.akamai.com/property-mgr/reference/latest-ip-address-blocks' }),
-    ]),
-  }),
-  Object.freeze({
     id: 'github-meta', displayName: 'GitHub Meta 官方网段', description: 'GitHub REST Meta API 的官方服务网段，作为托管网络证据。', category: 'network_identity', script: 'update-community-data.js', scriptArgs: Object.freeze(['github-meta']), defaultEnabled: true, defaultAutoUpdate: true, defaultIntervalHours: 24,
-    credentials: Object.freeze([{ name: 'github_token', label: 'GitHub Meta Token', optional: true }]),
+    credentials: Object.freeze([{ name: 'github_token', label: 'GitHub Meta Token', environment: 'GITHUB_META_TOKEN', optional: true, secret: true, helper: '可选。未填写时使用匿名 GitHub Meta API；填写后可降低共享出口限速风险。' }]),
     members: Object.freeze([{ id: 'github-meta-ranges', name: 'GitHub Meta IP ranges', kind: 'cloud', required: false, license: 'GitHub terms', homepageUrl: 'https://docs.github.com/rest/meta/meta' }]),
   }),
   Object.freeze({
     id: 'maxmind-geolite2', displayName: 'MaxMind GeoLite2', description: '本地 Country、City 与 ASN MMDB 查询，凭据仅保存在服务器加密库。', category: 'geo_asn', script: 'update-community-data.js', scriptArgs: Object.freeze(['maxmind-geolite2']), defaultEnabled: false, defaultAutoUpdate: false, defaultIntervalHours: 168,
-    credentials: Object.freeze([{ name: 'account_id', label: 'MaxMind Account ID' }, { name: 'license_key', label: 'MaxMind License Key' }]),
+    credentials: Object.freeze([
+      Object.freeze({ name: 'account_id', label: 'MaxMind Account ID', environment: 'MAXMIND_ACCOUNT_ID', secret: false, helper: '在 MaxMind 账户页面取得；请先接受 GeoLite2 EULA。' }),
+      Object.freeze({ name: 'license_key', label: 'MaxMind License Key', environment: 'MAXMIND_LICENSE_KEY', secret: true, helper: '仅用于服务器下载 GeoLite2 Country、City 和 ASN 数据。' }),
+    ]),
     members: Object.freeze([{ id: 'maxmind-geolite2-country', name: 'GeoLite2 Country', kind: 'country', required: false, license: 'MaxMind GeoLite2 EULA' }, { id: 'maxmind-geolite2-city', name: 'GeoLite2 City', kind: 'city', required: false, license: 'MaxMind GeoLite2 EULA' }, { id: 'maxmind-geolite2-asn', name: 'GeoLite2 ASN', kind: 'asn', required: false, license: 'MaxMind GeoLite2 EULA' }]),
   }),
   Object.freeze({
-    id: 'spamhaus-drop', displayName: 'Spamhaus DROP', description: '恶意网络块风险证据；保留来源、版权与数据日期，不会单独触发封禁。', category: 'reputation', script: 'update-community-data.js', scriptArgs: Object.freeze(['spamhaus-drop']), defaultEnabled: false, defaultAutoUpdate: false, defaultIntervalHours: 24,
+    id: 'spamhaus-drop', displayName: 'Spamhaus DROP', description: '恶意网络块风险证据；保留来源、版权与数据日期，不会单独触发封禁。', category: 'reputation', script: 'update-community-data.js', scriptArgs: Object.freeze(['spamhaus-drop']), defaultEnabled: true, defaultAutoUpdate: true, defaultIntervalHours: 24,
     members: Object.freeze([{ id: 'spamhaus-drop-v4', name: 'Spamhaus DROP IPv4', kind: 'reputation', required: false, license: 'Spamhaus attribution required', homepageUrl: 'https://www.spamhaus.org/blocklists/do-not-route-or-peer/' }, { id: 'spamhaus-drop-v6', name: 'Spamhaus DROP IPv6', kind: 'reputation', required: false, license: 'Spamhaus attribution required', homepageUrl: 'https://www.spamhaus.org/blocklists/do-not-route-or-peer/' }]),
   }),
   Object.freeze({

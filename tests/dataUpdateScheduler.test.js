@@ -104,6 +104,9 @@ test('IP2Proxy updater runs only when its own automatic update setting is enable
   const calls = [];
   const instance = scheduler({
     ip2ProxyAutoUpdateEnabled: true,
+    credentialProvider: async (sourceId) => sourceId === 'ip2proxy'
+      ? { IP2PROXY_DOWNLOAD_TOKEN: 'test-token', IP2PROXY_DOWNLOAD_CODE: 'PX12LITEBIN' }
+      : {},
     execute: async (scriptPath) => { calls.push(scriptPath); return { updated: false }; },
   });
 
@@ -167,6 +170,9 @@ test('forced all-source download passes force to every enabled updater and valid
   const calls = [];
   let validations = 0;
   const instance = scheduler({
+    credentialProvider: async (sourceId) => sourceId === 'ip2proxy'
+      ? { IP2PROXY_DOWNLOAD_TOKEN: 'test-token', IP2PROXY_DOWNLOAD_CODE: 'PX12LITEBIN' }
+      : {},
     execute: async (scriptPath, cwd, signal, args) => {
       calls.push({ scriptPath, args });
       return { status: 'updated', updated: true };
