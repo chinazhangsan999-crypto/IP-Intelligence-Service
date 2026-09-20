@@ -10,6 +10,7 @@ test('external lookup preserves the complete explainable profile', () => {
     asn: 13335,
     asn_org: 'Cloudflare, Inc.',
     asn_org_zh: 'Cloudflare',
+    isp_zh: '边缘网络运营商',
     network_type: 'cdn',
     verified_crawler: false,
     asn_judgment: { value: 13335, support_count: 5, alternatives: [{ value: 64500 }] },
@@ -28,6 +29,7 @@ test('external lookup preserves the complete explainable profile', () => {
     source_claims: [{ source: 'dbip-asn', field: 'asn', value: 13335 }],
     evidence: [{ source: 'ripe-ris', field: 'asn', value: 13335, confidence: 'high' }],
     sources: ['dbip-asn', 'ripe-ris'],
+    sources_zh: ['自治系统数据库', '互联网路由数据库'],
   });
 
   assert.equal(result.asn, 13335);
@@ -38,7 +40,7 @@ test('external lookup preserves the complete explainable profile', () => {
     'asn_judgment', 'asn_org_judgment', 'asn_judgment_zh', 'bgp_origin_asn',
     'bgp_origin_asns', 'bgp_prefix', 'bgp_conflict', 'rpki_status', 'rir',
     'allocation_country', 'rdap_urls', 'canonical_org', 'peeringdb_network_type',
-    'source_claims', 'evidence', 'sources',
+    'source_claims', 'evidence', 'sources', 'sources_zh', 'isp_zh',
   ]) assert.equal(field in result, true, `${field} must be preserved`);
 });
 
