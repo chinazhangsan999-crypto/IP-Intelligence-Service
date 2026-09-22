@@ -42,6 +42,20 @@
   let editingRuleId = null;
   let sourceCredentialFields = [];
   const SVG_NS = 'http://www.w3.org/2000/svg';
+  const ADMIN_VIEWS = new Set([
+    'overview', 'clients', 'database-center', 'rules', 'data-operations', 'audit', 'account',
+  ]);
+  const VIEW_TITLES = {
+    overview: '运行概览',
+    clients: '接入方',
+    'database-center': '数据库中心',
+    rules: '分类系统',
+    'data-operations': '更新任务',
+    audit: '审计记录',
+    account: '账户安全',
+  };
+  let currentView = 'overview';
+  let navigationResizeFrame = null;
 
   function formatNumber(value) {
     return numberFormat.format(Number(value || 0));
@@ -180,15 +194,50 @@
     syncNavigation();
   }
 
-  function syncNavigation() {
-    const hash = window.location.hash || '#overview';
-    const systemHashes = new Set(['#system-management', '#database-center', '#rules', '#data-operations', '#account']);
-    for (const link of document.querySelectorAll('.console-nav a, .section-nav a')) {
-      const target = link.getAttribute('href');
-      const active = target === hash || (target === '#system-management' && systemHashes.has(hash));
-      if (active) link.setAttribute('aria-current', 'location');
+  function requestedView() {
+    const rawView = window.location.hash.replace(/^#/, '');
+    if (rawView === 'system-management') return 'database-center';
+    return ADMIN_VIEWS.has(rawView) ? rawView : 'overview';
+  }
+
+  function keepActiveNavigationVisible() {
+    const navigation = document.querySelector('.console-nav');
+    const activeLink = navigation?.querySelector('a[aria-current="page"]');
+    if (!navigation || !activeLink) return;
+    const left = activeLink.offsetLeft;
+    const right = left + activeLink.offsetWidth;
+    const visibleLeft = navigation.scrollLeft;
+    const visibleRight = visibleLeft + navigation.clientWidth;
+    if (left < visibleLeft) navigation.scrollLeft = Math.max(0, left - 10);
+    else if (right > visibleRight) navigation.scrollLeft = right - navigation.clientWidth + 10;
+  }
+
+  function syncNavigation({ reload = false } = {}) {
+    const view = requestedView();
+    currentView = view;
+
+    if (window.location.hash === '#system-management' || !ADMIN_VIEWS.has(window.location.hash.replace(/^#/, ''))) {
+      window.history.replaceState(null, '', `${window.location.pathname}${window.location.search}#${view}`);
+    }
+
+    for (const panel of document.querySelectorAll('[data-admin-view]')) {
+      panel.hidden = panel.dataset.adminView !== view;
+    }
+    for (const link of document.querySelectorAll('.console-nav a[data-admin-route]')) {
+      if (link.dataset.adminRoute === view) link.setAttribute('aria-current', 'page');
       else link.removeAttribute('aria-current');
     }
+
+    document.title = `${VIEW_TITLES[view]} · IP Intelligence 运维中心`;
+    window.scrollTo({ top: 0, left: 0 });
+    keepActiveNavigationVisible();
+    if (reload && authenticated) refresh();
+  }
+
+  function navigateToView(view, options = {}) {
+    if (!ADMIN_VIEWS.has(view)) return;
+    window.history.pushState(null, '', `${window.location.pathname}${window.location.search}#${view}`);
+    syncNavigation(options);
   }
 
   function createCell(text, className = '') {
@@ -663,7 +712,7 @@
   function startPolling() {
     clearInterval(timer);
     timer = setInterval(() => {
-      if (!document.hidden) refresh();
+      if (!document.hidden && currentView === 'overview') refresh();
     }, 15_000);
   }
 
@@ -711,11 +760,8 @@
       });
       applySession(login.data);
       elements['login-password'].value = '';
-      const { snapshot, management } = await fetchDashboardData();
-      render(snapshot);
-      renderManagement(management);
-      startPolling();
-      window.scrollTo({ top: 0, left: 0 });
+      await refresh({ initial: true });
+      if (authenticated) startPolling();
       elements['main-content']?.focus({ preventScroll: true });
     } catch (error) {
       elements['auth-error'].textContent = error.message || '验证失败，请稍后重试';
@@ -1047,8 +1093,8 @@
       openSourceDialog(unit, true);
     } else if (button.dataset.action === 'rules-source') {
       resetRuleForm();
+      navigateToView('rules', { reload: false });
       elements['rule-source-id'].value = unit.id;
-      document.getElementById('rules')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
       elements['rule-name'].focus();
     } else if (button.dataset.action === 'download-source') {
       elements['download-source-id'].value = unit.id;
@@ -1113,20 +1159,31 @@
       showToast('无法自动复制，请手动复制选中内容');
     }
   });
+  document.querySelector('.console-nav')?.addEventListener('click', (event) => {
+    const link = event.target.closest('a[data-admin-route]');
+    if (!link) return;
+    event.preventDefault();
+    navigateToView(link.dataset.adminRoute, { reload: true });
+  });
   elements['refresh-button'].addEventListener('click', () => refresh());
-  window.addEventListener('hashchange', syncNavigation);
+  window.addEventListener('hashchange', () => syncNavigation({ reload: true }));
+  window.addEventListener('resize', () => {
+    if (navigationResizeFrame) cancelAnimationFrame(navigationResizeFrame);
+    navigationResizeFrame = requestAnimationFrame(() => {
+      keepActiveNavigationVisible();
+      navigationResizeFrame = null;
+    });
+  });
   elements['retry-button'].addEventListener('click', () => refresh());
   elements['logout-button'].addEventListener('click', logout);
   document.addEventListener('visibilitychange', () => {
-    if (!document.hidden && authenticated) refresh();
+    if (!document.hidden && authenticated && currentView === 'overview') refresh();
   });
 
   request('/admin/api/session').then(async (response) => {
     applySession(response.data);
-    const { snapshot, management } = await fetchDashboardData();
-    render(snapshot);
-    renderManagement(management);
-    startPolling();
+    await refresh({ initial: true });
+    if (authenticated) startPolling();
   }).catch(() => {
     showLogin();
     elements['login-username'].focus();

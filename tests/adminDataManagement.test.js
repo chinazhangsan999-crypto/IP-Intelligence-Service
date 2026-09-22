@@ -8,20 +8,32 @@ const adminScriptUrl = new URL('../public/admin/app.js', import.meta.url);
 const dbipUpdaterUrl = new URL('../scripts/update-dbip-data.js', import.meta.url);
 const evidenceUpdaterUrl = new URL('../scripts/update-evidence-data.js', import.meta.url);
 
-test('admin system management groups database, classification, jobs and account security', async () => {
+test('admin exposes every existing function as a top-level tab without dropping management controls', async () => {
   const html = await readFile(adminHtmlUrl, 'utf8');
-  assert.match(html, /id="system-management"/);
-  assert.match(html, /id="database-center"/);
-  assert.match(html, /id="rules"/);
-  assert.match(html, /id="data-operations"/);
-  assert.match(html, /id="account"/);
+  for (const view of ['overview', 'clients', 'database-center', 'rules', 'data-operations', 'audit', 'account']) {
+    assert.match(html, new RegExp(`href="#${view}" data-admin-route="${view}"`));
+    assert.match(html, new RegExp(`id="${view}" data-admin-view="${view}"`));
+  }
+  assert.doesNotMatch(html, /href="#system-management"/);
+  assert.match(html, /id="client-form"/);
+  assert.match(html, /id="secret-dialog"/);
   assert.match(html, /id="update-all-sources-button"/);
   assert.match(html, /id="force-download-all-button"/);
   assert.match(html, /id="download-preflight"/);
   assert.match(html, /id="source-dialog"[^>]*aria-labelledby=/);
   assert.match(html, /id="download-dialog"[^>]*aria-labelledby=/);
   assert.match(html, /id="rule-source-id"/);
+  assert.match(html, /id="account-form"/);
   assert.match(html, /一键下载全部/);
+});
+
+test('admin tab routing preserves legacy links and pauses background polling outside overview', async () => {
+  const script = await readFile(adminScriptUrl, 'utf8');
+  assert.match(script, /rawView === 'system-management'.*'database-center'/);
+  assert.match(script, /panel\.hidden = panel\.dataset\.adminView !== view/);
+  assert.match(script, /link\.dataset\.adminRoute === view/);
+  assert.match(script, /currentView === 'overview'/);
+  assert.match(script, /navigateToView\('rules'/);
 });
 
 test('DB-IP updater honors forced download mode', async () => {

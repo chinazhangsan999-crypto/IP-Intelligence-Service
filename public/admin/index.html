@@ -57,19 +57,23 @@
     </header>
 
     <nav class="console-nav" aria-label="运维中心栏目">
-      <a href="#overview">运行概览</a>
-      <a href="#clients">接入方</a>
-      <a href="#system-management">系统管理</a>
-      <a href="#audit">审计记录</a>
+      <a href="#overview" data-admin-route="overview">运行概览</a>
+      <a href="#clients" data-admin-route="clients">接入方</a>
+      <a href="#database-center" data-admin-route="database-center">数据库中心</a>
+      <a href="#rules" data-admin-route="rules">分类系统</a>
+      <a href="#data-operations" data-admin-route="data-operations">更新任务</a>
+      <a href="#audit" data-admin-route="audit">审计记录</a>
+      <a href="#account" data-admin-route="account">账户安全</a>
     </nav>
 
     <main id="main-content" class="dashboard" tabindex="-1">
-      <div class="page-heading" id="overview">
-        <div><p class="eyebrow">SYSTEM OVERVIEW</p><h1>运行概览</h1><p>本实例实时状态，数据每 15 秒自动刷新。</p></div>
+      <div class="notice error" id="dashboard-error" role="alert" hidden><span id="dashboard-error-text"></span><button id="retry-button" type="button">重试</button></div>
+
+      <section class="admin-view" id="overview" data-admin-view="overview" aria-labelledby="overview-title">
+      <div class="page-heading">
+        <div><p class="eyebrow">SYSTEM OVERVIEW</p><h1 id="overview-title" tabindex="-1">运行概览</h1><p>本实例实时状态，数据每 15 秒自动刷新。</p></div>
         <div class="updated-at">最后刷新 <time id="updated-at">--</time></div>
       </div>
-
-      <div class="notice error" id="dashboard-error" role="alert" hidden><span id="dashboard-error-text"></span><button id="retry-button" type="button">重试</button></div>
 
       <section class="kpi-grid" aria-label="核心运行指标">
         <article class="kpi-card"><div class="kpi-icon blue" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="m9.2 16.2-3.5-3.5 1.4-1.4 2.1 2.1 7.7-7.7 1.4 1.4-9.1 9.1Z"/></svg></div><span>服务状态</span><strong id="kpi-ready">--</strong><small id="kpi-uptime">运行时间 --</small></article>
@@ -108,9 +112,10 @@
         <div class="panel-heading"><div><h2 id="routes-title">接口性能</h2><p>本进程启动以来的固定路由聚合，不包含 URL 参数。</p></div></div>
         <div class="table-scroll"><table><thead><tr><th scope="col">方法</th><th scope="col">路由</th><th scope="col">请求数</th><th scope="col">平均耗时</th><th scope="col">P95 上界</th></tr></thead><tbody id="routes-body"></tbody></table></div>
       </section>
+      </section>
 
-      <section class="panel management-panel" id="clients" aria-labelledby="clients-title">
-        <div class="panel-heading"><div><h2 id="clients-title">导航站接入方</h2><p>创建、暂停或轮换 API 接入凭证。密钥仅在生成时显示一次。</p></div><span class="count-badge" id="client-count">0 个</span></div>
+      <section class="admin-view panel management-panel" id="clients" data-admin-view="clients" aria-labelledby="clients-title" hidden>
+        <div class="panel-heading"><div><p class="eyebrow">API CLIENTS</p><h2 id="clients-title" tabindex="-1">导航站接入方</h2><p>创建、暂停或轮换 API 接入凭证。密钥仅在生成时显示一次。</p></div><span class="count-badge" id="client-count">0 个</span></div>
         <form class="inline-form" id="client-form" novalidate>
           <div class="field-group"><label for="client-id">接入方 ID</label><input class="form-input" id="client-id" name="client_id" type="text" autocomplete="off" spellcheck="false" minlength="3" maxlength="64" placeholder="例如 nav-shanghai…" required></div>
           <div class="field-group"><label for="client-name">显示名称</label><input class="form-input" id="client-name" name="display_name" type="text" autocomplete="off" maxlength="128" placeholder="例如 上海导航站…" required></div>
@@ -121,19 +126,9 @@
         <div class="table-scroll"><table><thead><tr><th scope="col">接入方</th><th scope="col">状态</th><th scope="col">24h 请求 / IP / 错误</th><th scope="col">限速</th><th scope="col">最近使用</th><th scope="col">操作</th></tr></thead><tbody id="clients-body"></tbody></table></div>
       </section>
 
-      <section class="system-heading" id="system-management" aria-labelledby="system-management-title">
-        <div><p class="eyebrow">SYSTEM MANAGEMENT</p><h2 id="system-management-title">系统管理</h2><p>集中管理数据库、分类规则、更新任务与账户安全。</p></div>
-        <nav class="section-nav" aria-label="系统管理栏目">
-          <a href="#database-center">数据库中心</a>
-          <a href="#rules">分类系统</a>
-          <a href="#data-operations">更新任务</a>
-          <a href="#account">账户安全</a>
-        </nav>
-      </section>
-
-      <section class="panel management-panel database-center" id="database-center" aria-labelledby="database-center-title">
+      <section class="admin-view panel management-panel database-center" id="database-center" data-admin-view="database-center" aria-labelledby="database-center-title" hidden>
         <div class="panel-heading database-heading">
-          <div><h2 id="database-center-title">数据库中心</h2><p>查看全部上游入口、版本与更新状态；下载文件先校验，成功后才替换现有数据库。</p></div>
+          <div><p class="eyebrow">DATABASE CENTER</p><h2 id="database-center-title" tabindex="-1">数据库中心</h2><p>查看全部上游入口、版本与更新状态；下载文件先校验，成功后才替换现有数据库。</p></div>
           <div class="heading-actions">
             <button class="secondary-button labeled" id="check-all-sources-button" type="button">刷新数据状态</button>
             <button class="primary-button compact" id="update-all-sources-button" type="button">一键更新全部</button>
@@ -149,8 +144,8 @@
         <div class="database-list" id="database-list" aria-live="polite"></div>
       </section>
 
-      <section class="panel management-panel" id="rules" aria-labelledby="rules-title">
-        <div class="panel-heading"><div><h2 id="rules-title">分类系统</h2><p>按优先级匹配 ASN、组织名称或 CIDR；可新增、编辑和即时启停。</p></div><span class="count-badge" id="rule-count">0 条</span></div>
+      <section class="admin-view panel management-panel" id="rules" data-admin-view="rules" aria-labelledby="rules-title" hidden>
+        <div class="panel-heading"><div><p class="eyebrow">CLASSIFICATION RULES</p><h2 id="rules-title" tabindex="-1">分类系统</h2><p>按优先级匹配 ASN、组织名称或 CIDR；可新增、编辑和即时启停。</p></div><span class="count-badge" id="rule-count">0 条</span></div>
         <form class="rule-form" id="rule-form" novalidate>
           <div class="field-group"><label for="rule-source-id">关联数据源</label><select class="form-input" id="rule-source-id" name="source_id"><option value="">通用人工规则</option></select></div>
           <div class="field-group"><label for="rule-name">规则名称</label><input class="form-input" id="rule-name" name="name" type="text" autocomplete="off" maxlength="128" placeholder="例如 国内云厂商网段…" required></div>
@@ -168,18 +163,18 @@
         <div class="table-scroll"><table><thead><tr><th scope="col">规则</th><th scope="col">关联来源</th><th scope="col">匹配条件</th><th scope="col">结论</th><th scope="col">优先级</th><th scope="col">状态</th><th scope="col">操作</th></tr></thead><tbody id="rules-body"></tbody></table></div>
       </section>
 
-      <section class="panel management-panel" id="data-operations" aria-labelledby="data-operations-title">
-        <div class="panel-heading"><div><h2 id="data-operations-title">更新任务</h2><p>记录管理员和自动调度触发的下载、校验、安装与热重载结果。</p></div><span class="count-badge" id="job-count">0 条</span></div>
+      <section class="admin-view panel management-panel" id="data-operations" data-admin-view="data-operations" aria-labelledby="data-operations-title" hidden>
+        <div class="panel-heading"><div><p class="eyebrow">UPDATE JOBS</p><h2 id="data-operations-title" tabindex="-1">更新任务</h2><p>记录管理员和自动调度触发的下载、校验、安装与热重载结果。</p></div><span class="count-badge" id="job-count">0 条</span></div>
         <div class="table-scroll"><table><thead><tr><th scope="col">任务</th><th scope="col">状态</th><th scope="col">目标版本</th><th scope="col">开始时间</th><th scope="col">完成时间</th><th scope="col">结果 / 错误</th></tr></thead><tbody id="jobs-body"></tbody></table></div>
       </section>
 
-      <section class="panel management-panel" id="audit" aria-labelledby="audit-title">
-        <div class="panel-heading"><div><h2 id="audit-title">最近审计记录</h2><p>展示鉴权和管理员写操作结果，不保存原始查询 IP。</p></div><span class="count-badge" id="audit-count">0 条</span></div>
+      <section class="admin-view panel management-panel" id="audit" data-admin-view="audit" aria-labelledby="audit-title" hidden>
+        <div class="panel-heading"><div><p class="eyebrow">AUDIT LOG</p><h2 id="audit-title" tabindex="-1">最近审计记录</h2><p>展示鉴权和管理员写操作结果，不保存原始查询 IP。</p></div><span class="count-badge" id="audit-count">0 条</span></div>
         <div class="table-scroll"><table><thead><tr><th scope="col">时间</th><th scope="col">事件</th><th scope="col">结果</th><th scope="col">接入方</th><th scope="col">请求 ID</th></tr></thead><tbody id="audit-body"></tbody></table></div>
       </section>
 
-      <section class="panel account-panel" id="account" aria-labelledby="account-title">
-        <div class="panel-heading"><div><h2 id="account-title">账户安全</h2><p>修改管理账号或密码。保存后所有已登录设备都会退出。</p></div><span class="count-badge" id="current-account">--</span></div>
+      <section class="admin-view panel account-panel" id="account" data-admin-view="account" aria-labelledby="account-title" hidden>
+        <div class="panel-heading"><div><p class="eyebrow">ACCOUNT SECURITY</p><h2 id="account-title" tabindex="-1">账户安全</h2><p>修改管理账号或密码。保存后所有已登录设备都会退出。</p></div><span class="count-badge" id="current-account">--</span></div>
         <form id="account-form" novalidate>
           <div class="account-grid">
             <div class="field-group">
