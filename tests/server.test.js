@@ -244,6 +244,11 @@ test('admin data-source endpoints expose safe metadata and start scoped updates'
     verifyCsrf(_session, token) { return token === 'csrf-value'; },
   };
   const managementRepository = {
+    async getSourceCredentials(sourceId, masterKey) {
+      assert.equal(sourceId, 'maxmind-geolite2');
+      assert.equal(masterKey, 'test-client-secret-master-key');
+      return { account_id: '123456', license_key: 'saved-license-key' };
+    },
     async updateDataSourceConfig(sourceId, config) { return { source_id: sourceId, ...config }; },
     async recordAudit() {},
   };
@@ -274,6 +279,14 @@ test('admin data-source endpoints expose safe metadata and start scoped updates'
     });
     assert.equal(configResponse.status, 200);
 
+    const credentialedConfigResponse = await fetch(`${baseUrl}/admin/api/data-sources/maxmind-geolite2/config`, {
+      method: 'POST',
+      headers: { cookie, 'content-type': 'application/json', 'x-csrf-token': 'csrf-value' },
+      body: JSON.stringify({ display_name: 'MaxMind GeoLite2', enabled: true, auto_update_enabled: true, interval_hours: 168 }),
+    });
+    assert.equal(credentialedConfigResponse.status, 200);
+    assert.equal((await credentialedConfigResponse.json()).data.config.source_id, 'maxmind-geolite2');
+
     const update = await fetch(`${baseUrl}/admin/api/data-sources/dbip/update`, {
       method: 'POST',
       headers: { cookie, 'content-type': 'application/json', 'x-csrf-token': 'csrf-value' },
@@ -301,7 +314,12 @@ test('admin data-source endpoints expose safe metadata and start scoped updates'
       trigger: 'manual',
       validateAfterUpdate: true,
     });
-  }, allowAuthenticator, null, null, { adminAuthService, managementRepository, updateScheduler });
+  }, allowAuthenticator, null, null, {
+    adminAuthService,
+    managementRepository,
+    updateScheduler,
+    config: { clientSecretMasterKey: 'test-client-secret-master-key' },
+  });
 });
 
 test('public lookup shell and single-IP endpoint work without exposing HMAC credentials', async () => {

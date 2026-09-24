@@ -602,14 +602,14 @@ export function createHttpServer({
               throw new HttpError(422, 'SOURCE_CREDENTIALS_REQUIRED', `请先保存 ${missing.map((field) => field.label).join('、')}，再启用自动更新`);
             }
           }
-            const config = await managementRepository.updateDataSourceConfig(sourceId, {
+            const updatedConfig = await managementRepository.updateDataSourceConfig(sourceId, {
               displayName,
               enabled: payload.enabled === true,
               autoUpdateEnabled: payload.auto_update_enabled === true,
               intervalHours,
             }, session.admin_user_id);
             await managementRepository.recordAudit({ eventType: 'admin_data_source_config', outcome: 'success', requestId, metadata: { source_id: sourceId } });
-            sendJson(res, 200, { request_id: requestId, code: 'OK', data: { config } });
+            sendJson(res, 200, { request_id: requestId, code: 'OK', data: { config: updatedConfig } });
             return;
           }
           if (kind === 'admin-source-credentials-save') {
