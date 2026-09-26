@@ -85,7 +85,7 @@ export class AdminAuthService {
       throw new HttpError(422, 'INVALID_USERNAME', '账号需为 3 至 64 位字母、数字、点、短横线或下划线');
     }
     if (newPassword && !validateAdminPassword(newPassword)) {
-      throw new HttpError(422, 'INVALID_PASSWORD', '新密码长度需为 12 至 128 个字符');
+      throw new HttpError(422, 'INVALID_PASSWORD', '新密码长度需为 8 至 128 个字符');
     }
     if (nextUsername === user.username && !newPassword) {
       throw new HttpError(422, 'NO_CHANGES', '账号或密码没有变化');

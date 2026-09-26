@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import {
+  DEFAULT_ADMIN_PASSWORD,
   hashAdminPassword,
   validateAdminPassword,
   validateAdminUsername,
@@ -16,8 +17,10 @@ test('administrator passwords are salted and verified with scrypt', async () => 
 });
 
 test('administrator credential validation enforces bounded safe inputs', () => {
+  assert.equal(DEFAULT_ADMIN_PASSWORD, 'admin123');
   assert.equal(validateAdminUsername('admin.main'), true);
   assert.equal(validateAdminUsername('bad account'), false);
+  assert.equal(validateAdminPassword('admin123'), true);
   assert.equal(validateAdminPassword('twelve-chars!'), true);
   assert.equal(validateAdminPassword('short'), false);
 });

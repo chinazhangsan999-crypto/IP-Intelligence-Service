@@ -1,7 +1,6 @@
-import { randomBytes } from 'node:crypto';
 import { loadConfig } from '../config.js';
 import { AdminAuthRepository } from '../repositories/AdminAuthRepository.js';
-import { hashAdminPassword, validateAdminUsername } from '../security/adminPassword.js';
+import { DEFAULT_ADMIN_PASSWORD, hashAdminPassword, validateAdminUsername } from '../security/adminPassword.js';
 import { createPostgresPool, verifyPostgres } from './pool.js';
 import { runMigrations } from './migrator.js';
 
@@ -18,7 +17,7 @@ async function main() {
     await runMigrations(pool, logger);
     const repository = new AdminAuthRepository(pool);
     if (await repository.countUsers() > 0) throw new Error('An administrator already exists; change it from the admin console');
-    const password = randomBytes(18).toString('base64url');
+    const password = DEFAULT_ADMIN_PASSWORD;
     const { passwordHash, passwordSalt } = await hashAdminPassword(password);
     await repository.createUser({
       username,

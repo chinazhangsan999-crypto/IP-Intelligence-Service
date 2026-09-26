@@ -4,6 +4,7 @@ import { promisify } from 'node:util';
 const scrypt = promisify(scryptCallback);
 const KEY_LENGTH = 64;
 const SCRYPT_OPTIONS = Object.freeze({ N: 16_384, r: 8, p: 1, maxmem: 64 * 1024 * 1024 });
+export const DEFAULT_ADMIN_PASSWORD = 'admin123';
 
 export function validateAdminUsername(value) {
   if (typeof value !== 'string') return false;
@@ -11,7 +12,7 @@ export function validateAdminUsername(value) {
 }
 
 export function validateAdminPassword(value) {
-  return typeof value === 'string' && value.length >= 12 && value.length <= 128;
+  return typeof value === 'string' && value.length >= 8 && value.length <= 128;
 }
 
 export async function hashAdminPassword(password, salt = randomBytes(16)) {
